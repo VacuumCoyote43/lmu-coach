@@ -1,0 +1,17 @@
+# Compilación
+build/
+dist/
+*.spec.bak
+
+# Datos locales (sesiones indexadas, vueltas grabadas, configuración del overlay)
+data/
+config.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sesiones exportadas
+*.lmusession
