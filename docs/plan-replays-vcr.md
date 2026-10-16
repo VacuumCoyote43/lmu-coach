@@ -25,6 +25,39 @@ Medido con `tools/replay_probe.py` sobre una repetición de carrera de 44 coches
 
 **Conclusión:** para tener los coches en movimiento hay que leer el `.Vcr` (Fases 1–5). Lo que sí aprovechamos es que la **lista de participantes al cargar la repetición** es un dato conocido para la Fase 3 (identificar nombres de pilotos y coches dentro del `.Vcr`).
 
+## Fase 1 — Hallazgos con las repeticiones existentes (16/10/2026)
+
+Herramientas en `tools/vcr/`: `scan.py`, `records.py`, `find_marks.py`, `by_vehicle.py`, `trajectory.py`.
+
+1. **Las posiciones van en float32 sin comprimir, al menos en parte.** En `Algarve P1 1.Vcr` aparece (-81.06, -8.86, -120.56), que es la posición exacta de tu coche en boxes leída en directo de la memoria compartida. Son coordenadas del mundo del juego, en metros.
+2. **Registro de posición:** empieza por `0x41` y lleva una cabecera de 7 bytes, `41 b1 b2 b3 00 00 flags`:
+   - `b1` es par (`10`…`1c`);
+   - `b2 b3` cambian por sesión (`04 46`, `04 00`, `14 00`);
+   - `flags` ∈ {`20`, `24`, `30`};
+   - el byte 7 es `00` y el 9 es `01`/`02`;
+   - x, y, z en float32 a partir del **byte 45**.
+
+   En libres, los registros consecutivos dibujan la salida de boxes de forma continua: unos 7 m entre registros a la velocidad del pit lane.
+3. **No todo el recorrido está en float32.** En la clasificación salen tramos sueltos de curvas y mucho pit lane, pero huecos en la mayor parte de la pista. Hipótesis: **fotogramas clave** con la posición completa y **deltas comprimidos** entre ellos, con una densidad que dependería de "Replay Base Fidelity" (3 en tu configuración).
+4. **`b1` no parece ser el identificador del coche:** el grupo `10` reúne posiciones de toda la pista. Podría ser un tipo o tamaño de registro.
+5. Los registros terminan con 13 bytes que parecen float32 pequeños (¿orientación o velocidades?) y un **contador** que aumenta de uno en uno.
+6. No hay texto legible de pilotos ni de coches, pero sí fragmentos como `PORT`/`IMAO` en las primeras decenas de KB.
+
+**Siguiente paso:** con repeticiones controladas de un solo coche (abajo) se puede alinear cada registro con la telemetría `.duckdb` de la misma sesión. Así se sabrá cuál es el tiempo de cada registro, cómo se codifican los deltas y qué significan `b1` y el contador.
+
+### Repeticiones de prueba
+
+Mismo coche (296 GT3) y circuito (Portimão), **sin IA** salvo en la D, con la grabación de telemetría activada. Cada prueba es una sesión de libres que **se termina** para que LMU guarde la repetición:
+
+| | Qué hacer | Para qué |
+|---|---|---|
+| A | Salir a pista desde el garaje y quedarse **parado 30 s** en el box; terminar la sesión | ver el «esqueleto» sin movimiento |
+| B | Salir de boxes, dar **1 vuelta lanzada completa** y entrar a boxes; terminar | relacionar registros con una vuelta conocida |
+| C | Igual que B pero con **2 vueltas** | ver qué crece con la duración |
+| D | Igual que B con **1 coche IA** en pista | ver cómo se distinguen dos coches |
+
+LMU guarda solo **5 repeticiones por circuito** y borra las más antiguas: haz copia de las que quieras conservar o sube «Number Track Replays» en `Settings.JSON`.
+
 ## Fase 0 — Comprobar si hace falta (½ día)
 
 Antes de invertir semanas, probar el **camino corto**: reproducir una repetición dentro de LMU y ver si la memoria compartida (`LMU_Data`) publica los datos de **todos los coches** mientras se ve.
