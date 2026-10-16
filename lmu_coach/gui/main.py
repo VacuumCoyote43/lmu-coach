@@ -8,7 +8,7 @@ from PySide6.QtGui import QBrush, QColor, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton, QSizePolicy, QSplitter, QStackedWidget,
-    QTableWidget, QTableWidgetItem, QToolBar, QVBoxLayout, QWidget,
+    QTableWidget, QTableWidgetItem, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
 from .. import analysis, share
@@ -19,6 +19,7 @@ from . import theme
 from .charts import TelemetryCharts, TrackMap
 from .diagnostics_dialog import DiagnosticsDialog
 from .lap_picker import LapPicker
+from .replay import ReplayView
 
 IMPORTABLE = (share.EXTENSION, ".zip", ".duckdb")
 SESSION_TYPES = {"Practice": "Libres", "Qualify": "Clasificación", "Race": "Carrera", "Warmup": "Warm-up"}
@@ -372,7 +373,11 @@ class SessionView(QWidget):
         split.addWidget(top)
 
         self.charts = TelemetryCharts()
-        split.addWidget(self.charts)
+        self.replay = ReplayView()
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.charts, "📈  Gráficas")
+        self.tabs.addTab(self.replay, "▶  Repetición")
+        split.addWidget(self.tabs)
 
         zones_box = QWidget()
         zb = QVBoxLayout(zones_box)
@@ -399,6 +404,8 @@ class SessionView(QWidget):
         self.laps.customContextMenuRequested.connect(self._laps_menu)
         self.zones.itemSelectionChanged.connect(self._zone_selected)
         self.charts.cursor_moved.connect(self.map.set_cursor)
+        self.replay.position_changed.connect(self._replay_moved)
+        self.tabs.currentChanged.connect(lambda i: self.replay.setFocus() if self.tabs.widget(i) is self.replay else None)
         self.pin_btn.clicked.connect(self._pin)
         self.unpin_btn.clicked.connect(self._unpin)
         self.export_btn.clicked.connect(self._export)
@@ -598,15 +605,17 @@ class SessionView(QWidget):
         if not self.sd or self.lap_num is None:
             return
         L = self.sd.track_len
-        lap = analysis.by_distance(self.sd.lap_data(self.lap_num), L)
+        lap_raw = self.sd.lap_data(self.lap_num)
+        lap = analysis.by_distance(lap_raw, L)
         ref_info = self._reference()
-        ref = dlt = None
+        ref = dlt = ref_raw = None
         zones = []
         self.zone_results = []
         if ref_info:
             ref_sd, ref_num, desc = ref_info
             same = ref_sd is self.sd and ref_num == self.lap_num
-            ref = analysis.by_distance(ref_sd.lap_data(ref_num), L)
+            ref_raw = ref_sd.lap_data(ref_num)
+            ref = analysis.by_distance(ref_raw, L)
             dlt = analysis.delta(ref, lap)
             self.zone_results = analysis.compare_zones(ref, lap, dlt)
             zones = [z.zone for z in self.zone_results]
@@ -620,7 +629,13 @@ class SessionView(QWidget):
             self.status.emit(f"Vuelta {self.lap_num} sin comparación")
         self.charts.display(lap, ref, dlt, zones)
         self.map.display(lap, ref, dlt, zones)
+        self.replay.load(lap_raw, ref_raw, ref, zones)
         self._fill_zones()
+
+    def _replay_moved(self, d):
+        """La repetición mueve el cursor de las gráficas y el punto del mapa pequeño."""
+        self.charts.set_cursor(d)
+        self.map.set_cursor(d)
 
     def _fill_zones(self):
         t = self.zones

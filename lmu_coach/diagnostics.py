@@ -7,7 +7,7 @@ from pathlib import Path
 from .paths import DATA_DIR, FROZEN, load_settings
 from .sessions import auto_record_telemetry, find_lmu_dir, steam_lmu_candidates
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 
 
 @dataclass

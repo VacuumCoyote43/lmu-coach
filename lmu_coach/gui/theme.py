@@ -44,6 +44,14 @@ QCheckBox {{ spacing: 6px; }}
 QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid {MUTED}; border-radius: 3px; background: {PANEL_2}; }}
 QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; image: none; }}
 QCheckBox::indicator:hover {{ border-color: {ACCENT}; }}
+QTabWidget::pane {{ border: 1px solid {BORDER}; border-radius: 6px; top: -1px; background: {PANEL}; }}
+QTabBar::tab {{ background: {BG}; color: {MUTED}; padding: 6px 16px; border: 1px solid {BORDER};
+               border-bottom: none; border-top-left-radius: 6px; border-top-right-radius: 6px; margin-right: 2px; }}
+QTabBar::tab:selected {{ background: {PANEL}; color: {FG}; font-weight: 600; }}
+QTabBar::tab:hover {{ color: {FG}; }}
+QSlider::groove:horizontal {{ height: 6px; background: {PANEL_2}; border-radius: 3px; }}
+QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 3px; }}
+QSlider::handle:horizontal {{ background: {FG}; width: 14px; margin: -5px 0; border-radius: 7px; }}
 QLineEdit {{ background: {PANEL_2}; border: 1px solid {BORDER}; border-radius: 5px; padding: 5px 8px; }}
 QLineEdit:focus {{ border-color: {ACCENT}; }}
 QScrollBar:vertical {{ background: {PANEL}; width: 12px; }}
