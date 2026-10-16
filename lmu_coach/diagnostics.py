@@ -7,7 +7,7 @@ from pathlib import Path
 from .paths import DATA_DIR, FROZEN, load_settings
 from .sessions import auto_record_telemetry, find_lmu_dir, steam_lmu_candidates
 
-APP_VERSION = "1.5.0"
+from .version import __version__ as APP_VERSION
 
 
 @dataclass
@@ -84,6 +84,16 @@ def run() -> list[Check]:
     checks.append(Check(None, "Overlay del coach",
                         "Para verlo encima del juego, LMU debe estar en «Ventana sin bordes» (Borderless), "
                         "no en pantalla completa."))
+    try:
+        from . import updater
+        rel = updater.latest_release(timeout=4)
+        if rel and updater.is_newer(rel.version):
+            checks.append(Check(None, "Actualizaciones", f"Hay una versión nueva: {rel.version}. "
+                                                         "Pulsa «⬆ Actualizar» en la barra superior."))
+        else:
+            checks.append(Check(True, "Actualizaciones", f"Tienes la última versión ({APP_VERSION})"))
+    except Exception:
+        checks.append(Check(None, "Actualizaciones", "No se pudo comprobar (¿sin conexión a internet?)"))
     checks.append(Check(None, "App", f"LMU Coach {APP_VERSION} · {'instalada' if FROZEN else 'desarrollo'} · "
                                      f"datos en {DATA_DIR} · Windows {platform.version()}"))
     return checks

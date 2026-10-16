@@ -1,6 +1,9 @@
 ; Instalador de LMU Coach (Inno Setup 6). Compilar con build.bat o: ISCC installer.iss
 #define AppName "LMU Coach"
-#define AppVersion "1.5.0"
+; La versión la pasa build.bat (/DAppVersion=...) desde lmu_coach/version.py
+#ifndef AppVersion
+  #define AppVersion "0.0.0-dev"
+#endif
 
 [Setup]
 AppId={{6C1B7D0E-4A52-4C61-9E0B-5F3A9C2D7E11}
@@ -47,4 +50,4 @@ Root: HKA; Subkey: "Software\Classes\LMUCoach.Session\DefaultIcon"; ValueType: s
 Root: HKA; Subkey: "Software\Classes\LMUCoach.Session\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppName}.exe"" ""%1"""
 
 [Run]
-Filename: "{app}\{#AppName}.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppName}.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall

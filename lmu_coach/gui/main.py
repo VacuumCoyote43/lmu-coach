@@ -20,6 +20,7 @@ from .charts import TelemetryCharts, TrackMap
 from .diagnostics_dialog import DiagnosticsDialog
 from .lap_picker import LapPicker
 from .replay import ReplayView
+from .update_dialog import CheckWorker, UpdateDialog
 
 IMPORTABLE = (share.EXTENSION, ".zip", ".duckdb")
 SESSION_TYPES = {"Practice": "Libres", "Qualify": "Clasificación", "Race": "Carrera", "Warmup": "Warm-up"}
@@ -786,6 +787,12 @@ class MainWindow(QMainWindow):
         self.diag_btn.setToolTip("Comprueba por qué no se cargan datos de LMU y permite elegir la carpeta del juego")
         self.diag_btn.clicked.connect(lambda: self.show_diagnostics())
         tb.addWidget(self.diag_btn)
+        self.update_btn = QPushButton()
+        self.update_btn.setObjectName("coach")
+        self.update_btn.clicked.connect(self._show_update)
+        self.update_action = tb.addWidget(self.update_btn)
+        self.update_action.setVisible(False)  # solo aparece si hay versión nueva
+        self._release = None
         self.refresh_btn = QPushButton("⟳  Buscar sesiones nuevas")
         self.refresh_btn.clicked.connect(self.refresh)
         tb.addWidget(self.refresh_btn)
@@ -815,6 +822,10 @@ class MainWindow(QMainWindow):
         if self.index.sessions:
             self.list.set_sessions(self.index.sessions)
         self.refresh()
+        # Buscar actualizaciones en segundo plano, cuando la ventana ya está a la vista
+        self.update_worker = CheckWorker()
+        self.update_worker.found.connect(self._update_found)
+        QTimer.singleShot(3000, self.update_worker.start)
 
     def _open(self, info):
         self.stack.setCurrentWidget(self.view)
@@ -851,6 +862,18 @@ class MainWindow(QMainWindow):
             self._diag_auto_shown = True
             self.empty.setText("No hay sesiones de LMU todavía.\nPulsa «🩺 Diagnóstico» para ver qué falta.")
             QTimer.singleShot(0, lambda: self.show_diagnostics("No encuentro sesiones de Le Mans Ultimate"))
+
+    # --- actualizaciones -------------------------------------------------
+
+    def _update_found(self, rel):
+        self._release = rel
+        self.update_btn.setText(f"⬆  Actualizar a {rel.version}")
+        self.update_action.setVisible(True)
+        self.statusBar().showMessage(f"Hay una versión nueva de LMU Coach: {rel.version}", 15000)
+
+    def _show_update(self):
+        if self._release:
+            UpdateDialog(self, self._release).exec()
 
     # --- diagnóstico ------------------------------------------------------
 
