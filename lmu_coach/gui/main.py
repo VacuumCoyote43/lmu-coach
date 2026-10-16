@@ -1,6 +1,6 @@
 """Ventana principal: sesiones de LMU, análisis de vueltas y lanzador del modo coach."""
 import sys
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, QStandardPaths, Qt, QThread, QTimer, Signal
@@ -19,6 +19,7 @@ from . import theme
 from .charts import TelemetryCharts, TrackMap
 from .diagnostics_dialog import DiagnosticsDialog
 from .lap_picker import LapPicker
+from .lmu_replays import LmuReplaysWindow
 from .replay import ReplayView
 from .update_dialog import CheckWorker, UpdateDialog
 
@@ -779,6 +780,11 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         tb.addWidget(spacer)
+        self.replays_btn = QPushButton("🎬  Repeticiones de LMU")
+        self.replays_btn.setToolTip("Reproduce las repeticiones del juego con todos los coches")
+        self.replays_btn.clicked.connect(self._show_lmu_replays)
+        tb.addWidget(self.replays_btn)
+        self._replays_win = None
         self.import_btn = QPushButton("⬇  Importar sesión")
         self.import_btn.setToolTip("Abre un .lmusession que te haya pasado otro piloto (también puedes arrastrarlo aquí)")
         self.import_btn.clicked.connect(self._choose_import)
@@ -862,6 +868,19 @@ class MainWindow(QMainWindow):
             self._diag_auto_shown = True
             self.empty.setText("No hay sesiones de LMU todavía.\nPulsa «🩺 Diagnóstico» para ver qué falta.")
             QTimer.singleShot(0, lambda: self.show_diagnostics("No encuentro sesiones de Le Mans Ultimate"))
+
+    # --- repeticiones de LMU ---------------------------------------------
+
+    def _player_name(self) -> str:
+        names = Counter(s.driver for s in self.index.sessions if not s.imported and s.driver)
+        return names.most_common(1)[0][0] if names else ""
+
+    def _show_lmu_replays(self):
+        if self._replays_win is None:
+            self._replays_win = LmuReplaysWindow(self, self._player_name())
+        self._replays_win.show()
+        self._replays_win.raise_()
+        self._replays_win.activateWindow()
 
     # --- actualizaciones -------------------------------------------------
 

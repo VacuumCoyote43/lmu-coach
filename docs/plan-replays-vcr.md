@@ -15,6 +15,21 @@
 | Tamaño | Libres ~1 MB; carreras hasta **2,6 GB**, así que el lector tiene que leer por partes sin cargar el archivo entero en memoria |
 | Ventaja clave | Para tus propias sesiones tenemos **la telemetría `.duckdb` de la misma sesión**: posición, velocidad y tiempos exactos de tu coche. Son datos conocidos con los que buscar dónde y cómo están codificados en el `.Vcr` |
 
+## Estado (16/10/2026): conseguido ✅
+
+El formato está descifrado y documentado en **[formato-vcr.md](formato-vcr.md)**. El lector es `lmu_coach/vcr.py` y está integrado en la app (ventana «Repeticiones de LMU», versión 1.7.0).
+
+| Fase | Estado |
+|---|---|
+| 0 Camino corto (memoria compartida) | descartado: LMU no actualiza la memoria compartida durante las repeticiones |
+| 1 Contenedor | ✅ fotogramas `[f32 tiempo][u16 n]` a 50 Hz + eventos de tamaño `longitud + 5` |
+| 2 Estado por coche | ✅ posición x, y, z float32 en eventos de 70 bytes; validado contra la telemetría (r = 1,0000, 0,28 km/h) |
+| 3 Identidades y eventos | ✅ participantes con relevos en el bloque final · ⏳ banderas, boxes y vueltas |
+| 4 Robustez | ✅ lectura por partes (2,6 GB en ~30 s) · ⏳ probar más versiones del juego |
+| 5 Integración | ✅ visor con todos los coches, orden aproximado y seguir a un coche · ⏳ vueltas y tiempos por coche |
+
+Lo que queda abajo es el registro histórico de cómo se llegó hasta aquí.
+
 ## Resultado de la Fase 0 (16/10/2026): el camino corto no sirve
 
 Medido con `tools/replay_probe.py` sobre una repetición de carrera de 44 coches, primero parada y después **avanzando a mitad de carrera** (30 s en cada caso):

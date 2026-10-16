@@ -46,6 +46,13 @@ Atajos (usan Python 3.12 instalado para el usuario):
   - Las sesiones importadas salen en naranja con el nombre del piloto, y se pueden filtrar con «Importadas».
   - No cuentan como tu récord. Sí aparecen en «Comparar con», para enfrentar tu vuelta a la de tu amigo.
   - Con **🗑 Quitar importada** se borra la copia de la app. LMU no se toca.
+- **🎬 Repeticiones de LMU**: abre las repeticiones del propio juego (`.Vcr`) y las reproduce con **todos los coches** sobre el mapa.
+  - Cada coche lleva el nombre de su piloto, que cambia en cada relevo.
+  - A la derecha, el orden aproximado por distancia recorrida.
+  - Puedes seguir a cualquier coche, y el tuyo sale resaltado.
+  - Velocidades de ×1 a ×60.
+
+  El formato está documentado en [docs/formato-vcr.md](docs/formato-vcr.md).
 - **📌 Usar como referencia del coach**: fija la vuelta seleccionada para que el coach la persiga. Con "Quitar", el coach vuelve a usar tu mejor vuelta.
 
 ## Modo coach (overlay)
