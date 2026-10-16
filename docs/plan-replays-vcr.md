@@ -15,6 +15,16 @@
 | Tamaño | Libres ~1 MB; carreras hasta **2,6 GB**, así que el lector tiene que leer por partes sin cargar el archivo entero en memoria |
 | Ventaja clave | Para tus propias sesiones tenemos **la telemetría `.duckdb` de la misma sesión**: posición, velocidad y tiempos exactos de tu coche. Son datos conocidos con los que buscar dónde y cómo están codificados en el `.Vcr` |
 
+## Resultado de la Fase 0 (16/10/2026): el camino corto no sirve
+
+Medido con `tools/replay_probe.py` sobre una repetición de carrera de 44 coches, primero parada y después **avanzando a mitad de carrera** (30 s en cada caso):
+
+- El *scoring* publica **los 44 participantes** (piloto, coche, `mControl = 3`, repetición), pero con las **posiciones de parrilla congeladas**: tiempo de sesión 0, vuelta 0 y fase de juego 9 ("pausa").
+- La **telemetría está vacía** (0 coches).
+- No cambia nada mientras la repetición avanza: LMU rellena la memoria compartida **una vez al cargar la repetición** y no la actualiza durante la reproducción.
+
+**Conclusión:** para tener los coches en movimiento hay que leer el `.Vcr` (Fases 1–5). Lo que sí aprovechamos es que la **lista de participantes al cargar la repetición** es un dato conocido para la Fase 3 (identificar nombres de pilotos y coches dentro del `.Vcr`).
+
 ## Fase 0 — Comprobar si hace falta (½ día)
 
 Antes de invertir semanas, probar el **camino corto**: reproducir una repetición dentro de LMU y ver si la memoria compartida (`LMU_Data`) publica los datos de **todos los coches** mientras se ve.
