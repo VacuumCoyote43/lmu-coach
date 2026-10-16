@@ -1,6 +1,6 @@
 ; Instalador de LMU Coach (Inno Setup 6). Compilar con build.bat o: ISCC installer.iss
 #define AppName "LMU Coach"
-#define AppVersion "1.3.1"
+#define AppVersion "1.4.0"
 
 [Setup]
 AppId={{6C1B7D0E-4A52-4C61-9E0B-5F3A9C2D7E11}

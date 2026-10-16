@@ -10,7 +10,7 @@ Formato (descubierto inspeccionando los archivos):
 import bisect
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import duckdb
@@ -106,6 +106,8 @@ class SessionInfo:
     error: str = ""
     driver: str = ""
     imported: bool = False   # sesión importada de otro piloto (o de otro PC)
+    # vueltas completas: [nº, tiempo (oficial si es válida, duración si no), válida, s1, s2, s3, nota]
+    lap_list: list = field(default_factory=list)
 
 
 def _connect(path) -> duckdb.DuckDBPyConnection:
@@ -189,13 +191,16 @@ def read_session_info(path: Path, imported: bool = False) -> SessionInfo:
         weather=m.get("WeatherConditions", ""), driver=m.get("DriverName", ""),
         laps=len(laps), valid_laps=len(valid),
         best=best.time if best else 0.0, best_lap=best.num if best else 0,
+        lap_list=[[l.num, round(l.time if l.valid else l.duration, 3), l.valid,
+                   round(l.s1, 3), round(l.s2, 3), round(l.s3, 3), l.note]
+                  for l in laps if l.note != "incompleta"],
     )
 
 
 class SessionIndex:
     """Índice cacheado de las sesiones propias (telemetría de LMU) y las importadas."""
 
-    CACHE_VERSION = 2
+    CACHE_VERSION = 3
 
     def __init__(self, telemetry_dir: Path, cache_path: Path, imported_dir: Path | None = None):
         self.dir = Path(telemetry_dir)

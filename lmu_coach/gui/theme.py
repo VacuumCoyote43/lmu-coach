@@ -41,9 +41,17 @@ QPushButton#coach:hover {{ background: #25904f; }}
 QPushButton#coach[running="true"] {{ background: #8a2a2a; }}
 QPushButton#coach[running="true"]:hover {{ background: #a33232; }}
 QCheckBox {{ spacing: 6px; }}
-QScrollBar:vertical {{ background: {PANEL}; width: 10px; }}
-QScrollBar::handle:vertical {{ background: {BORDER}; border-radius: 4px; min-height: 30px; }}
-QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid {MUTED}; border-radius: 3px; background: {PANEL_2}; }}
+QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; image: none; }}
+QCheckBox::indicator:hover {{ border-color: {ACCENT}; }}
+QLineEdit {{ background: {PANEL_2}; border: 1px solid {BORDER}; border-radius: 5px; padding: 5px 8px; }}
+QLineEdit:focus {{ border-color: {ACCENT}; }}
+QScrollBar:vertical {{ background: {PANEL}; width: 12px; }}
+QScrollBar:horizontal {{ background: {PANEL}; height: 12px; }}
+QScrollBar::handle:vertical {{ background: #5a5e69; border-radius: 5px; min-height: 30px; margin: 2px; }}
+QScrollBar::handle:horizontal {{ background: #5a5e69; border-radius: 5px; min-width: 30px; margin: 2px; }}
+QScrollBar::handle:hover {{ background: {MUTED}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 QProgressBar {{ background: {PANEL_2}; border: none; border-radius: 3px; max-height: 6px; }}
 QProgressBar::chunk {{ background: {ACCENT}; border-radius: 3px; }}
 """

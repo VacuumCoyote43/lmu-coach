@@ -6,8 +6,8 @@ from pathlib import Path
 from PySide6.QtCore import QProcess, QStandardPaths, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QIcon
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
-    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSizePolicy, QSplitter, QStackedWidget,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton, QSizePolicy, QSplitter, QStackedWidget,
     QTableWidget, QTableWidgetItem, QToolBar, QVBoxLayout, QWidget,
 )
 
@@ -18,6 +18,7 @@ from ..sessions import SessionData, SessionIndex, SessionInfo, find_telemetry_di
 from . import theme
 from .charts import TelemetryCharts, TrackMap
 from .diagnostics_dialog import DiagnosticsDialog
+from .lap_picker import LapPicker
 
 IMPORTABLE = (share.EXTENSION, ".zip", ".duckdb")
 SESSION_TYPES = {"Practice": "Libres", "Qualify": "Clasificación", "Race": "Carrera", "Warmup": "Warm-up"}
@@ -37,6 +38,13 @@ SHORT_TRACKS = {
     "Fuji Speedway": "Fuji",
     "Autodromo Enzo e Dino Ferrari": "Imola",
 }
+
+
+def car_label(car: str, car_class: str | None = None) -> str:
+    """'Vista AF Corse 2026 #21:WEC' + GT3 -> 'Vista AF Corse 2026 #21 (WEC) · GT3'"""
+    name, _, series = car.partition(":")
+    label = f"{name} ({series})" if series else name
+    return f"{label}  ·  {car_class}" if car_class else label
 
 
 def short_track(name: str) -> str:
@@ -128,6 +136,10 @@ class SessionList(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 12, 6, 12)
         lay.addWidget(section("Sesiones"))
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("🔍  Buscar circuito, coche o piloto…")
+        self.search.setClearButtonEnabled(True)
+        lay.addWidget(self.search)
         self.track = QComboBox()
         self.car = QComboBox()
         self.kind = QComboBox()
@@ -137,6 +149,8 @@ class SessionList(QWidget):
         self.source.addItem("Importadas", "imported")
         self.only_valid = QCheckBox("Solo con vueltas válidas")
         self.only_valid.setChecked(True)
+        for w in (self.track, self.car, self.kind, self.source):
+            w.setMaxVisibleItems(30)  # que se vean todos sin tener que descubrir el scroll
         for w in (self.track, self.car):
             w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
             w.setMinimumContentsLength(18)
@@ -153,52 +167,75 @@ class SessionList(QWidget):
         self.count = QLabel()
         self.count.setObjectName("subtitle")
         lay.addWidget(self.count)
-        self.track.currentIndexChanged.connect(self._track_changed)
-        self.car.currentIndexChanged.connect(self._fill)
-        self.kind.currentIndexChanged.connect(self._fill)
-        self.source.currentIndexChanged.connect(self._fill)
+        for combo in (self.track, self.car, self.kind, self.source):
+            combo.currentIndexChanged.connect(self._fill)
         self.only_valid.toggled.connect(self._fill)
+        self.search.textChanged.connect(self._fill)
         self.table.itemSelectionChanged.connect(self._on_select)
 
     def set_sessions(self, sessions):
         self.sessions = [s for s in sessions if not s.error]
-        cur_track = self.track.currentData()
-        self.track.blockSignals(True)
-        self.track.clear()
-        self.track.addItem("Todos los circuitos", None)
-        for t in sorted({s.track for s in self.sessions}, key=short_track):
-            self.track.addItem(short_track(t), t)
-        i = self.track.findData(cur_track)
-        self.track.setCurrentIndex(max(i, 0))
-        self.track.blockSignals(False)
-        self.kind.blockSignals(True)
-        self.kind.clear()
-        self.kind.addItem("Todos los tipos", None)
-        for k in sorted({s.session_type for s in self.sessions}):
-            self.kind.addItem(SESSION_TYPES.get(k, k), k)
-        self.kind.blockSignals(False)
-        self._track_changed()
-
-    def _track_changed(self):
-        track = self.track.currentData()
-        cur = self.car.currentData()
-        self.car.blockSignals(True)
-        self.car.clear()
-        self.car.addItem("Todos los coches", None)
-        for c in sorted({s.car for s in self.sessions if track is None or s.track == track}):
-            self.car.addItem(c, c)
-        i = self.car.findData(cur)
-        self.car.setCurrentIndex(max(i, 0))
-        self.car.blockSignals(False)
+        classes = {}
+        for s in self.sessions:
+            classes.setdefault(s.car, s.car_class)
+        # Los desplegables muestran SIEMPRE todos los circuitos y coches; los filtros solo cambian los contadores
+        self._reset_combo(self.track, "Todos los circuitos",
+                          [(short_track(t), t) for t in sorted({s.track for s in self.sessions}, key=short_track)])
+        self._reset_combo(self.car, "Todos los coches",
+                          [(car_label(c, classes.get(c)), c)
+                           for c in sorted({s.car for s in self.sessions}, key=lambda c: (classes.get(c) or "", c))])
+        self._reset_combo(self.kind, "Todos los tipos",
+                          [(SESSION_TYPES.get(k, k), k) for k in sorted({s.session_type for s in self.sessions})])
         self._fill()
 
+    @staticmethod
+    def _reset_combo(combo, all_label, entries):
+        cur = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(all_label, None)
+        for label, value in entries:
+            combo.addItem(label, value)
+            combo.setItemData(combo.count() - 1, label, Qt.UserRole + 1)  # etiqueta sin contador
+        i = combo.findData(cur)
+        combo.setCurrentIndex(max(i, 0))
+        combo.blockSignals(False)
+
+    def _matches(self, s, skip=None):
+        """¿Pasa la sesión los filtros? `skip` ignora uno (para los contadores de ese desplegable)."""
+        track, car = self.track.currentData(), self.car.currentData()
+        kind, source = self.kind.currentData(), self.source.currentData()
+        text = self.search.text().strip().casefold()
+        if skip != "track" and track is not None and s.track != track:
+            return False
+        if skip != "car" and car is not None and s.car != car:
+            return False
+        if kind is not None and s.session_type != kind:
+            return False
+        if source is not None and (source == "imported") != s.imported:
+            return False
+        if self.only_valid.isChecked() and not s.valid_laps:
+            return False
+        if text:
+            hay = " ".join((s.track, short_track(s.track), s.car, s.car_class, s.driver,
+                            SESSION_TYPES.get(s.session_type, s.session_type))).casefold()
+            if not all(word in hay for word in text.split()):
+                return False
+        return True
+
+    def _update_counts(self):
+        for combo, dim, attr in ((self.track, "track", "track"), (self.car, "car", "car")):
+            counts = {}
+            for s in self.sessions:
+                if self._matches(s, skip=dim):
+                    counts[getattr(s, attr)] = counts.get(getattr(s, attr), 0) + 1
+            for i in range(1, combo.count()):
+                n = counts.get(combo.itemData(i), 0)
+                combo.setItemText(i, f"{combo.itemData(i, Qt.UserRole + 1)}   ({n})")
+
     def _fill(self):
-        track, car, kind = self.track.currentData(), self.car.currentData(), self.kind.currentData()
-        source = self.source.currentData()
-        rows = [s for s in self.sessions
-                if (track is None or s.track == track) and (car is None or s.car == car)
-                and (kind is None or s.session_type == kind) and (not self.only_valid.isChecked() or s.valid_laps)
-                and (source is None or (source == "imported") == s.imported)]
+        self._update_counts()
+        rows = [s for s in self.sessions if self._matches(s)]
         # tu mejor tiempo por circuito+coche (sin contar importadas), para marcar en morado la sesión récord
         records = {}
         for s in self.sessions:
@@ -214,7 +251,7 @@ class SessionList(QWidget):
             t.setItem(r, 0, date)
             t.setItem(r, 1, item(short_track(s.track)))
             car = item(s.car)
-            car.setToolTip(s.car)
+            car.setToolTip(f"{s.car} · {s.car_class}")
             t.setItem(r, 2, car)
             kind_txt = SESSION_TYPES.get(s.session_type, s.session_type)
             if s.imported:
@@ -230,7 +267,9 @@ class SessionList(QWidget):
         if not self._sorted_once:  # al principio, lo más reciente arriba; luego respeta lo que elija el usuario
             t.sortItems(0, Qt.DescendingOrder)
             self._sorted_once = True
-        self.count.setText(f"{len(rows)} sesiones  ·  morado: tu récord  ·  📥 naranja: importadas")
+        hidden = len(self.sessions) - len(rows)
+        extra = f"  ·  {hidden} ocultas por los filtros" if hidden else ""
+        self.count.setText(f"{len(rows)} sesiones{extra}  ·  morado: tu récord  ·  📥 naranja: importadas")
 
     def select_path(self, path: str):
         """Selecciona una sesión concreta (p. ej. recién importada), quitando filtros si hace falta."""
@@ -240,12 +279,15 @@ class SessionList(QWidget):
                     self.table.selectRow(r)
                     self.table.scrollToItem(self.table.item(r, 0))
                     return
+            for w in (self.track, self.car, self.kind, self.source, self.search, self.only_valid):
+                w.blockSignals(True)
             for combo in (self.track, self.car, self.kind, self.source):
-                combo.blockSignals(True)
                 combo.setCurrentIndex(0)
-                combo.blockSignals(False)
+            self.search.clear()
             self.only_valid.setChecked(False)
-            self._track_changed()
+            for w in (self.track, self.car, self.kind, self.source, self.search, self.only_valid):
+                w.blockSignals(False)
+            self._fill()
 
     def _on_select(self):
         rows = self.table.selectionModel().selectedRows()
@@ -272,6 +314,8 @@ class SessionView(QWidget):
         self.sd: SessionData | None = None
         self.lap_num = None
         self.zone_results = []
+        self.custom_lap = None      # (ruta, nº) elegida con «Elegir cualquier vuelta…»
+        self._compare_prev = 0
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 12, 12, 12)
@@ -350,7 +394,9 @@ class SessionView(QWidget):
         lay.addWidget(split, 1)
 
         self.laps.itemSelectionChanged.connect(self._lap_selected)
-        self.compare.currentIndexChanged.connect(self._refresh_analysis)
+        self.compare.currentIndexChanged.connect(self._compare_changed)
+        self.laps.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.laps.customContextMenuRequested.connect(self._laps_menu)
         self.zones.itemSelectionChanged.connect(self._zone_selected)
         self.charts.cursor_moved.connect(self.map.set_cursor)
         self.pin_btn.clicked.connect(self._pin)
@@ -446,19 +492,94 @@ class SessionView(QWidget):
                         key=lambda s: (s.car != i.car, s.best))
         for s in others[:15]:
             car = "" if s.car == i.car else f"  ·  {s.car}"
-            self.compare.addItem(f"📥 {s.driver or 'importada'}  ·  {fmt_time(s.best)}{car}", ("imported", s.path))
+            self.compare.addItem(f"📥 {s.driver or 'importada'}  ·  {fmt_time(s.best)}{car}", f"imported::{s.path}")
+        custom = self._custom_label()
+        if custom:
+            self.compare.insertItem(0, custom, self._lap_key(*self.custom_lap))
+        self.compare.addItem("🔎  Elegir cualquier vuelta…", "pick")
         self.compare.addItem("Nada", "none")
         idx = self.compare.findData(prev)
         self.compare.setCurrentIndex(idx if idx >= 0 else 0)
+        self._compare_prev = self.compare.currentIndex()
         self.compare.blockSignals(False)
+
+    @staticmethod
+    def _lap_key(path, num) -> str:
+        # Qt convierte las tuplas en listas al guardarlas en el combo: usamos texto para poder buscarlas
+        return f"lap::{num}::{path}"
+
+    def _custom_label(self) -> str | None:
+        """Texto para la vuelta elegida a mano (si es del mismo circuito que la sesión abierta)."""
+        if not self.custom_lap:
+            return None
+        path, num = self.custom_lap
+        info = next((s for s in self.index_getter().sessions if s.path == path), None)
+        if not info or info.track != self.sd.info.track:
+            self.custom_lap = None
+            return None
+        lap = next((l for l in info.lap_list if l[0] == num), None)
+        t = fmt_time(lap[1]) if lap else "?"
+        who = f"📥 {info.driver}" if info.imported else info.recorded
+        same = "esta sesión" if path == self.sd.info.path else who
+        return f"V{num}  ·  {t}  ·  {same}"
+
+    def _compare_changed(self, index):
+        if self.compare.itemData(index) == "pick":
+            self._pick_lap()
+            return
+        self._compare_prev = index
+        self._refresh_analysis()
+
+    def _pick_lap(self):
+        i = self.sd.info
+        dlg = LapPicker(self, self.index_getter().sessions, i.track, i.car,
+                        exclude=(i.path, self.lap_num), short_track=short_track)
+        if dlg.exec() and dlg.choice:
+            self.set_custom_lap(*dlg.choice)
+        else:  # cancelado: volver a la opción anterior
+            self.compare.blockSignals(True)
+            self.compare.setCurrentIndex(self._compare_prev)
+            self.compare.blockSignals(False)
+
+    def set_custom_lap(self, path, num):
+        self.custom_lap = (path, num)
+        self._fill_compare()
+        self.compare.blockSignals(True)
+        self.compare.setCurrentIndex(self.compare.findData(self._lap_key(path, num)))
+        self._compare_prev = self.compare.currentIndex()
+        self.compare.blockSignals(False)
+        self._refresh_analysis()
+
+    def _laps_menu(self, pos):
+        row = self.laps.rowAt(pos.y())
+        if row < 0 or not self.sd:
+            return
+        num = self.laps.item(row, 0).data(Qt.UserRole)
+        menu = QMenu(self)
+        if num != self.lap_num:
+            menu.addAction(f"Comparar la vuelta seleccionada con la V{num}",
+                           lambda: self.set_custom_lap(self.sd.info.path, num))
+        menu.addAction("Comparar con cualquier vuelta del circuito…", self._pick_lap)
+        menu.exec(self.laps.viewport().mapToGlobal(pos))
 
     def _reference(self):
         """Devuelve (SessionData, nº de vuelta, descripción) de la vuelta con la que comparar."""
         mode = self.compare.currentData()
         if mode == "none":
             return None
-        if isinstance(mode, tuple) and mode[0] == "imported":
-            info = next((s for s in self.index_getter().sessions if s.path == mode[1]), None)
+        if isinstance(mode, str) and mode.startswith("lap::"):
+            _, num, path = mode.split("::", 2)
+            num = int(num)
+            info = next((s for s in self.index_getter().sessions if s.path == path), None)
+            if info:
+                sd = self._load(path)
+                lap = sd.lap(num)
+                who = f"{info.driver} " if info.imported else ""
+                t = lap.time if lap and lap.valid else (lap.duration if lap else 0)
+                return sd, num, f"{who}V{num} {fmt_time(t)} ({info.recorded})"
+        if isinstance(mode, str) and mode.startswith("imported::"):
+            path = mode.split("::", 1)[1]
+            info = next((s for s in self.index_getter().sessions if s.path == path), None)
             if info:
                 sd = self._load(info.path)
                 return sd, info.best_lap, f"{info.driver or 'importada'} {fmt_time(info.best)}"
@@ -491,7 +612,8 @@ class SessionView(QWidget):
             zones = [z.zone for z in self.zone_results]
             lap_t = self.sd.lap(self.lap_num)
             shown = lap_t.time if lap_t.valid else lap_t.duration
-            ref_t = ref_sd.lap(ref_num).time
+            ref_lap = ref_sd.lap(ref_num)
+            ref_t = ref_lap.time if ref_lap.valid else ref_lap.duration
             self.status.emit(f"Vuelta {self.lap_num} ({fmt_time(shown)}) contra {desc}"
                              + ("  ·  es la misma vuelta" if same else f"  ·  {shown - ref_t:+.3f} s"))
         else:
