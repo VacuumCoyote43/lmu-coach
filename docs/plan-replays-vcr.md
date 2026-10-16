@@ -45,6 +45,16 @@ Herramientas en `tools/vcr/`: `scan.py`, `records.py`, `find_marks.py`, `by_vehi
 
 **Siguiente paso:** con repeticiones controladas de un solo coche (abajo) se puede alinear cada registro con la telemetría `.duckdb` de la misma sesión. Así se sabrá cuál es el tiempo de cada registro, cómo se codifican los deltas y qué significan `b1` y el contador.
 
+### Intento de alineado con repeticiones existentes (16/10/2026, `tools/vcr/align.py`)
+
+Pareja usada: `P1 4.Vcr` ↔ `P_2026-10-16T17_01_47Z.duckdb`. Los nombres de la telemetría van una hora por detrás de la hora local, así que es una tanda de unos 4 minutos, de 18:01 a 18:05.
+
+- **GPS → mundo:** `x ≈ -lon·R·cos60° + tx`, `z ≈ -(lat-60)·R + tz` (ejes sin cambiar, signos invertidos), con R = 111320 m/°. Error mediano de unos 8,6 m: hay que refinarlo con más puntos.
+- **El orden en el archivo no sigue el tiempo** (correlación de -0,03). Las repeticiones de libres cubren **todo el evento** (varias tandas seguidas), no la tanda del `.duckdb`, y no hay forma fiable de casarlas.
+- El filtro relajado de registros `0x41` da muchos **falsos positivos** (448k "registros" en 47 MB): hace falta conocer el formato del bloque o fotograma que los contiene para leerlos en orden.
+
+**Conclusión:** con repeticiones de eventos largos no se puede avanzar con fiabilidad. Siguen haciendo falta las **repeticiones controladas** de abajo, cada una en una **sesión nueva y corta** (salir del evento entre pruebas), para que cada `.Vcr` contenga una sola tanda.
+
 ### Repeticiones de prueba
 
 Mismo coche (296 GT3) y circuito (Portimão), **sin IA** salvo en la D, con la grabación de telemetría activada. Cada prueba es una sesión de libres que **se termina** para que LMU guarde la repetición:
