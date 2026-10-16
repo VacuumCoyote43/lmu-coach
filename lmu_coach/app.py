@@ -90,7 +90,7 @@ class App:
         s = self.reader.read()
         if s is None:
             self.overlay.draw({"status": "Esperando a Le Mans Ultimate…",
-                               "substatus": "Entra en pista (modo ventana sin bordes para ver el overlay)"})
+                               "substatus": "Abre el juego y sal a pista. Si ya lo está, usa «Diagnóstico» en la app."})
             return
         if not s.in_realtime:
             self.overlay.draw({"status": "En el monitor / garaje", "substatus": f"{s.track} · {s.car}"})

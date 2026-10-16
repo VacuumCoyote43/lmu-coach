@@ -18,13 +18,17 @@ import numpy as np
 
 from .laps import Lap
 
-DEFAULT_TELEMETRY = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Le Mans Ultimate\UserData\Telemetry")
+DEFAULT_LMU_DIR = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Le Mans Ultimate")
 RATE = 50.0  # Hz al que remuestreamos cada vuelta
 
 
-def find_telemetry_dir() -> Path:
-    """Busca la carpeta de telemetría de LMU en todas las bibliotecas de Steam."""
-    candidates = [DEFAULT_TELEMETRY]
+def is_lmu_dir(path: Path) -> bool:
+    return (Path(path) / "Le Mans Ultimate.exe").is_file()
+
+
+def steam_lmu_candidates() -> list[Path]:
+    """Carpetas donde podría estar LMU según las bibliotecas de Steam."""
+    candidates = [DEFAULT_LMU_DIR]
     steam_dirs = [Path(r"C:\Program Files (x86)\Steam")]
     try:  # Steam puede estar instalado en otra ruta: la guarda en el registro
         import winreg
@@ -39,11 +43,34 @@ def find_telemetry_dir() -> Path:
             continue
         for m in re.finditer(r'"path"\s+"([^"]+)"', vdf):
             lib = Path(m.group(1).replace("\\\\", "\\"))
-            candidates.append(lib / "steamapps" / "common" / "Le Mans Ultimate" / "UserData" / "Telemetry")
-    for c in candidates:
-        if c.is_dir():
-            return c
-    return DEFAULT_TELEMETRY
+            candidates.append(lib / "steamapps" / "common" / "Le Mans Ultimate")
+    return list(dict.fromkeys(candidates))
+
+
+def find_lmu_dir() -> Path | None:
+    """Carpeta de instalación de LMU: la elegida a mano en la app o la encontrada en Steam."""
+    from .paths import load_settings
+    manual = load_settings().get("lmu_dir")
+    if manual and is_lmu_dir(Path(manual)):
+        return Path(manual)
+    return next((c for c in steam_lmu_candidates() if is_lmu_dir(c)), None)
+
+
+def find_telemetry_dir() -> Path:
+    # Aunque aún no exista (LMU la crea al grabar la primera sesión) devolvemos dónde estará
+    return (find_lmu_dir() or DEFAULT_LMU_DIR) / "UserData" / "Telemetry"
+
+
+def auto_record_telemetry(lmu_dir: Path | None) -> bool | None:
+    """Valor de "Automatically Record Telemetry" en los ajustes de LMU (None si no se puede leer)."""
+    if not lmu_dir:
+        return None
+    try:
+        text = (Path(lmu_dir) / "UserData" / "player" / "Settings.JSON").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    m = re.search(r'"Automatically Record Telemetry"\s*:\s*(true|false)', text, re.IGNORECASE)
+    return (m.group(1).lower() == "true") if m else None
 
 
 @dataclass

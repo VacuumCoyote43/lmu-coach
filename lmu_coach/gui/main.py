@@ -17,6 +17,7 @@ from ..paths import ASSETS_DIR, IMPORTED_DIR, INDEX_PATH, LAPS_DIR, PROJECT_ROOT
 from ..sessions import SessionData, SessionIndex, SessionInfo, find_telemetry_dir
 from . import theme
 from .charts import TelemetryCharts, TrackMap
+from .diagnostics_dialog import DiagnosticsDialog
 
 IMPORTABLE = (share.EXTENSION, ".zip", ".duckdb")
 SESSION_TYPES = {"Practice": "Libres", "Qualify": "Clasificación", "Race": "Carrera", "Warmup": "Warm-up"}
@@ -624,6 +625,7 @@ class MainWindow(QMainWindow):
         # Archivos pasados al abrir (doble clic en un .lmusession) o soltados mientras se indexa
         self._pending_imports = [a for a in sys.argv[1:] if Path(a).suffix.lower() in IMPORTABLE and Path(a).is_file()]
         self._select_after = None
+        self._diag_auto_shown = False
         self.setAcceptDrops(True)
 
         tb = QToolBar()
@@ -643,6 +645,10 @@ class MainWindow(QMainWindow):
         self.import_btn.setToolTip("Abre un .lmusession que te haya pasado otro piloto (también puedes arrastrarlo aquí)")
         self.import_btn.clicked.connect(self._choose_import)
         tb.addWidget(self.import_btn)
+        self.diag_btn = QPushButton("🩺  Diagnóstico")
+        self.diag_btn.setToolTip("Comprueba por qué no se cargan datos de LMU y permite elegir la carpeta del juego")
+        self.diag_btn.clicked.connect(lambda: self.show_diagnostics())
+        tb.addWidget(self.diag_btn)
         self.refresh_btn = QPushButton("⟳  Buscar sesiones nuevas")
         self.refresh_btn.clicked.connect(self.refresh)
         tb.addWidget(self.refresh_btn)
@@ -650,7 +656,7 @@ class MainWindow(QMainWindow):
         self.list = SessionList()
         self.view = SessionView(lambda: self.index)
         self.stack = QStackedWidget()
-        empty = QLabel("Elige una sesión de la lista")
+        self.empty = empty = QLabel("Elige una sesión de la lista")
         empty.setAlignment(Qt.AlignCenter)
         empty.setObjectName("subtitle")
         self.stack.addWidget(empty)
@@ -703,6 +709,23 @@ class MainWindow(QMainWindow):
         if self._pending_imports:
             files, self._pending_imports = self._pending_imports, []
             QTimer.singleShot(0, lambda: self.import_files(files))
+        elif not any(not s.imported and not s.error for s in sessions) and not self._diag_auto_shown:
+            # Sin ninguna sesión propia: casi siempre es la carpeta o la grabación de telemetría de LMU
+            self._diag_auto_shown = True
+            self.empty.setText("No hay sesiones de LMU todavía.\nPulsa «🩺 Diagnóstico» para ver qué falta.")
+            QTimer.singleShot(0, lambda: self.show_diagnostics("No encuentro sesiones de Le Mans Ultimate"))
+
+    # --- diagnóstico ------------------------------------------------------
+
+    def show_diagnostics(self, headline: str = ""):
+        dlg = DiagnosticsDialog(self, headline)
+        dlg.lmu_dir_changed.connect(self._lmu_dir_changed)
+        dlg.exec()
+
+    def _lmu_dir_changed(self):
+        self.index.dir = find_telemetry_dir()
+        self.view.cache.clear()
+        self.refresh()
 
     # --- importar ---------------------------------------------------------
 

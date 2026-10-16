@@ -19,6 +19,7 @@ LAPS_DIR = DATA_DIR / "laps"
 DEMO_LAPS_DIR = DATA_DIR / "demo_laps"
 INDEX_PATH = DATA_DIR / "sessions_index.json"
 IMPORTED_DIR = DATA_DIR / "imported_sessions"
+SETTINGS_PATH = DATA_DIR / "settings.json"
 
 
 def coach_command(demo: bool = False) -> tuple[str, list[str]]:
@@ -29,3 +30,18 @@ def coach_command(demo: bool = False) -> tuple[str, list[str]]:
     exe = Path(sys.executable)
     pyw = exe.with_name("pythonw.exe")
     return str(pyw if pyw.exists() else exe), ["-m", "lmu_coach", *extra]
+
+
+def load_settings() -> dict:
+    """Ajustes de la app (p. ej. la carpeta de LMU elegida a mano)."""
+    import json
+    try:
+        return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(settings: dict):
+    import json
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_PATH.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
