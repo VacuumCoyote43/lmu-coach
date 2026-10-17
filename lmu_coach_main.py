@@ -38,7 +38,7 @@ def main():
         from lmu_coach.app import main as coach_main
         coach_main([a for a in sys.argv[1:] if a != "--coach"])
     else:
-        from lmu_coach.gui.main import main as gui_main
+        from lmu_coach.gui.launcher import main as gui_main
         gui_main()
 
 
