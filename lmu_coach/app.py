@@ -6,12 +6,13 @@ import time
 
 from .coach import LiveCoach
 from .laps import LapRecorder, LapStore, Reference, fmt_time, save_async
-from .speech import Speaker, gap_es, lap_time_es
+from .speech import RATES, Speaker, gap_es, lap_time_es
 from .overlay import AMBER, MUTED, Overlay
 from .paths import CONFIG_PATH, DEMO_LAPS_DIR, INDEX_PATH, LAPS_DIR
 from .reader import DemoReader, LMUReader
 
-DEFAULT_CONFIG = {"x": 60, "y": 60, "opacity": 0.93, "beep_on_brake": False, "voice": True}
+DEFAULT_CONFIG = {"x": 60, "y": 60, "opacity": 0.93, "beep_on_brake": False, "voice": True,
+                  "voice_name": None, "voice_rate": 1.2}
 LAP_FLASH_SECONDS = 6.0
 
 
@@ -62,8 +63,11 @@ class App:
         self.reader = DemoReader(demo_speed) if demo else LMUReader()
         self.coach = LiveCoach()
         self.recorder = LapRecorder(self._on_lap)
-        self.overlay = Overlay(self.cfg, self.close, on_voice=self._voice_toggled)
-        self.speaker = Speaker(bool(self.cfg.get("voice", True)))
+        self.speaker = Speaker(bool(self.cfg.get("voice", True)), self.cfg.get("voice_name"),
+                               float(self.cfg.get("voice_rate", 1.2)))
+        self.speaker.start()
+        self.overlay = Overlay(self.cfg, self.close, on_voice=self._voice_toggled,
+                               voice_menu=(self._voice_choices, self._voice_chosen, self._rate_chosen))
         # consumo: lo aprendido en esta sesión y, mientras tanto, lo histórico de tus sesiones
         self.fuel_laps, self.ve_laps = [], []
         self.hist_fuel = self.hist_ve = None
@@ -263,6 +267,25 @@ class App:
         self.speaker.enabled = on
         if on:
             self.speaker.say("Avisos por voz activados")
+
+    def _voice_choices(self):
+        """(voces instaladas, voz actual, velocidades, velocidad actual) para el menú del overlay."""
+        sp = self.speaker
+        return sp.voices, sp.current or sp.voice, RATES, sp.rate
+
+    def _voice_chosen(self, name):
+        self.cfg["voice_name"] = name
+        self.speaker.set_voice(name)
+        self._voice_sample()
+
+    def _rate_chosen(self, rate):
+        self.cfg["voice_rate"] = rate
+        self.speaker.set_rate(rate)
+        self._voice_sample()
+
+    def _voice_sample(self):
+        if self.speaker.enabled:
+            self.speaker.say(f"Frena. {lap_time_es(106.658)}")
 
     def _voice_events(self, s, cue):
         sp = self.speaker

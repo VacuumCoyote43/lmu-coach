@@ -30,10 +30,11 @@ FEEDBACK_Y = 134
 
 
 class Overlay:
-    def __init__(self, cfg: dict, on_close, on_voice=None):
+    def __init__(self, cfg: dict, on_close, on_voice=None, voice_menu=None):
         self.cfg = cfg
         self.on_close = on_close
         self.on_voice = on_voice
+        self.voice_menu = voice_menu    # (opciones(), elegir_voz(nombre), elegir_velocidad(v))
         self.root = tk.Tk()
         self.root.title("LMU Coach")
         self.root.overrideredirect(True)
@@ -73,6 +74,23 @@ class Overlay:
             voice = tk.BooleanVar(value=bool(self.cfg.get("voice", True)))
             m.add_checkbutton(label="Avisos por voz", variable=voice,
                               command=lambda: self.on_voice(voice.get()))
+            if self.voice_menu:
+                choices, pick_voice, pick_rate = self.voice_menu
+                voices, current, rates, rate = choices()
+                vm = tk.Menu(m, tearoff=0)
+                self._voice_var = tk.StringVar(value=current or "")
+                for name in voices:
+                    vm.add_radiobutton(label=name, value=name, variable=self._voice_var,
+                                       command=lambda n=name: pick_voice(n))
+                if not voices:
+                    vm.add_command(label="(buscando voces…)", state="disabled")
+                m.add_cascade(label="Voz", menu=vm)
+                rm = tk.Menu(m, tearoff=0)
+                self._rate_var = tk.DoubleVar(value=rate)
+                for label, r in rates:
+                    rm.add_radiobutton(label=label, value=r, variable=self._rate_var,
+                                       command=lambda r=r: pick_rate(r))
+                m.add_cascade(label="Velocidad de la voz", menu=rm)
             m.add_separator()
         m.add_command(label="Salir", command=self.on_close)
         m.tk_popup(e.x_root, e.y_root)

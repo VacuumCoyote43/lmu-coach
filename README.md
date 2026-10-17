@@ -71,7 +71,7 @@ Pulsa **▶ Iniciar modo coach** y entra en pista con LMU en **ventana sin borde
 
   El sector en curso muestra el delta en directo, y en la cabecera aparece la **vuelta ideal** (la suma de tus mejores sectores).
 - **Combustible y energía**: vueltas restantes de cada uno en la cabecera (⛽ / ⚡), en ámbar o rojo cuando quedan pocas.
-- **Avisos por voz** (voz de Windows en español): «frena», cuánto ganas o pierdes en cada frenada, el tiempo de vuelta, si la vuelta se invalida y cuando queda poco combustible. Se activan o desactivan con clic derecho en el overlay.
+- **Avisos por voz** (voz de Windows en español): «frena», cuánto ganas o pierdes en cada frenada, el tiempo de vuelta, si la vuelta se invalida y cuando queda poco combustible. Con clic derecho en el overlay se activan o desactivan, y se elige la voz (por ejemplo Pablo, Laura o Helena, según las que tenga Windows) y la velocidad. Al cambiarlas oyes una frase de prueba.
 - **Tiempo de vuelta en grande** durante 6 s al cruzar meta, con la diferencia frente a la referencia. Sale en morado si es tu nueva mejor vuelta y en gris si no es válida.
 - Graba automáticamente cada vuelta válida en `data/laps/`.
 
