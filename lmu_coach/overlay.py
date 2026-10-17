@@ -30,9 +30,10 @@ FEEDBACK_Y = 134
 
 
 class Overlay:
-    def __init__(self, cfg: dict, on_close):
+    def __init__(self, cfg: dict, on_close, on_voice=None):
         self.cfg = cfg
         self.on_close = on_close
+        self.on_voice = on_voice
         self.root = tk.Tk()
         self.root.title("LMU Coach")
         self.root.overrideredirect(True)
@@ -68,6 +69,11 @@ class Overlay:
 
     def _menu(self, e):
         m = tk.Menu(self.root, tearoff=0)
+        if self.on_voice:
+            voice = tk.BooleanVar(value=bool(self.cfg.get("voice", True)))
+            m.add_checkbutton(label="Avisos por voz", variable=voice,
+                              command=lambda: self.on_voice(voice.get()))
+            m.add_separator()
         m.add_command(label="Salir", command=self.on_close)
         m.tk_popup(e.x_root, e.y_root)
 
@@ -111,8 +117,18 @@ class Overlay:
         c = self.c
         ref = f"V{st['lap']}  ·  Ref {fmt_time(st['ref_time'])}" if st["ref_time"] else f"V{st['lap']}  ·  sin ref"
         c.create_text(W - PAD, 6, anchor="ne", fill=MUTED, font=("Segoe UI", 8), text=ref)
+        fuel = st.get("fuel") or {}
+        parts = []
+        for key, icon in (("fuel_laps", "⛽"), ("ve_laps", "⚡")):
+            if fuel.get(key) is not None:
+                parts.append((f"{icon} {fuel[key]:.1f} v", fuel[key]))
         if st.get("lap_invalid"):
             c.create_text(W - PAD, 22, anchor="ne", fill=RED, font=("Segoe UI Semibold", 8), text="INVALIDADA")
+        elif parts:
+            low = min(v for _, v in parts)
+            col = RED if low < 1.5 else AMBER if low < 3 else FG
+            c.create_text(W - PAD, 22, anchor="ne", fill=col, font=("Segoe UI Semibold", 8),
+                          text="   ".join(p for p, _ in parts))
         elif sec.get("ideal"):
             c.create_text(W - PAD, 22, anchor="ne", fill=PURPLE_FG, font=("Segoe UI", 8),
                           text=f"Ideal {fmt_time(sec['ideal'])}")

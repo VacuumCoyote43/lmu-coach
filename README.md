@@ -46,6 +46,13 @@ Atajos (usan Python 3.12 instalado para el usuario):
   - Las sesiones importadas salen en naranja con el nombre del piloto, y se pueden filtrar con «Importadas».
   - No cuentan como tu récord. Sí aparecen en «Comparar con», para enfrentar tu vuelta a la de tu amigo.
   - Con **🗑 Quitar importada** se borra la copia de la app. LMU no se toca.
+- **Pestañas de análisis** en cada sesión:
+  - **⛽ Combustible y estrategia**: consumo de combustible y energía virtual por vuelta, la media de tus sesiones con ese coche y circuito, y una calculadora de paradas (vueltas por relevo, número de paradas y cuánto cargar en cada relevo).
+  - **🔧 Reglaje**: diferencias entre el reglaje de la sesión y el de tu sesión más rápida, o cualquier otra, con los nombres en español.
+  - **🎯 Consistencia**: cuánto varía, entre vueltas, tu punto de frenada, la velocidad en el vértice y el tiempo en cada frenada.
+  - **🛞 Neumáticos y frenos**: por vuelta y rueda, presión, temperaturas interior/centro/exterior, temperatura máxima del freno y desgaste, con pistas orientativas (presión, caída).
+  - **🧠 Asistente de reglaje**: detecta subviraje o sobreviraje por curva y fase (entrada, vértice, salida), cuánto trabajan el ABS y el TC, y las temperaturas de ruedas y frenos. Con eso propone cambios de reglaje ordenados por prioridad. También mira qué valores te dieron mejores tiempos en tus otras sesiones. No usa IA: son reglas de ingeniería aplicadas a tu telemetría. ✓ marca lo que se puede cambiar en series de reglaje fijo.
+- **📈 Progreso**: tu mejor vuelta y tu ritmo medio por día, y la **vuelta ideal** con tus mejores sectores de todas las sesiones.
 - **📌 Usar como referencia del coach**: fija la vuelta seleccionada para que el coach la persiga. Con "Quitar", el coach vuelve a usar tu mejor vuelta.
 
 ## Modo coach (overlay)
@@ -63,6 +70,8 @@ Pulsa **▶ Iniciar modo coach** y entra en pista con LMU en **ventana sin borde
   - Gris: vuelta no válida.
 
   El sector en curso muestra el delta en directo, y en la cabecera aparece la **vuelta ideal** (la suma de tus mejores sectores).
+- **Combustible y energía**: vueltas restantes de cada uno en la cabecera (⛽ / ⚡), en ámbar o rojo cuando quedan pocas.
+- **Avisos por voz** (voz de Windows en español): «frena», cuánto ganas o pierdes en cada frenada, el tiempo de vuelta, si la vuelta se invalida y cuando queda poco combustible. Se activan o desactivan con clic derecho en el overlay.
 - **Tiempo de vuelta en grande** durante 6 s al cruzar meta, con la diferencia frente a la referencia. Sale en morado si es tu nueva mejor vuelta y en gris si no es válida.
 - Graba automáticamente cada vuelta válida en `data/laps/`.
 

@@ -5,7 +5,7 @@ a = Analysis(
     ["lmu_coach_main.py"],
     pathex=[],
     datas=[("assets/icon.png", "assets"), ("assets/icon.ico", "assets")],
-    hiddenimports=["lmu_coach.app", "lmu_coach.gui.main"],
+    hiddenimports=["lmu_coach.app", "lmu_coach.gui.main", "uuid", "decimal", "ipaddress"],  # duckdb los importa en tiempo de ejecución
     excludes=["PyQt5", "PyQt6", "PySide2", "matplotlib", "scipy", "pandas", "IPython", "pytest"],
     noarchive=False,
 )

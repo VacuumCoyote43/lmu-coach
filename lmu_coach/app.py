@@ -6,11 +6,12 @@ import time
 
 from .coach import LiveCoach
 from .laps import LapRecorder, LapStore, Reference, fmt_time, save_async
+from .speech import Speaker, gap_es, lap_time_es
 from .overlay import AMBER, MUTED, Overlay
 from .paths import CONFIG_PATH, DEMO_LAPS_DIR, INDEX_PATH, LAPS_DIR
 from .reader import DemoReader, LMUReader
 
-DEFAULT_CONFIG = {"x": 60, "y": 60, "opacity": 0.93, "beep_on_brake": False}
+DEFAULT_CONFIG = {"x": 60, "y": 60, "opacity": 0.93, "beep_on_brake": False, "voice": True}
 LAP_FLASH_SECONDS = 6.0
 
 
@@ -61,7 +62,15 @@ class App:
         self.reader = DemoReader(demo_speed) if demo else LMUReader()
         self.coach = LiveCoach()
         self.recorder = LapRecorder(self._on_lap)
-        self.overlay = Overlay(self.cfg, self.close)
+        self.overlay = Overlay(self.cfg, self.close, on_voice=self._voice_toggled)
+        self.speaker = Speaker(bool(self.cfg.get("voice", True)))
+        # consumo: lo aprendido en esta sesión y, mientras tanto, lo histórico de tus sesiones
+        self.fuel_laps, self.ve_laps = [], []
+        self.hist_fuel = self.hist_ve = None
+        self._lap_fuel0 = self._lap_ve0 = None
+        self._cur = None
+        self._spoken = set()          # avisos ya dichos en esta vuelta (frenadas, invalidación…)
+        self._last_fb = None
         self.ref_key = None
         self.ref_time = None
         self.ref_pinned = False
@@ -75,6 +84,7 @@ class App:
 
     def close(self):
         save_config(self.cfg)
+        self.speaker.close()
         self.reader.close()
         self.overlay.root.destroy()
 
@@ -98,9 +108,14 @@ class App:
 
         self._ensure_reference(s.track, s.car)
         new_lap = self.recorder.lap_no is not None and s.lap != self.recorder.lap_no
+        self._cur = s
         self.recorder.feed(s)
-        if new_lap:
-            self.coach.reset_lap()
+        if new_lap or self._lap_fuel0 is None:
+            if new_lap:
+                self.coach.reset_lap()
+                self._spoken.clear()
+                self._fuel_warning()
+            self._lap_fuel0, self._lap_ve0 = s.fuel, s.ve
 
         t_lap = s.et - s.lap_start_et
         d = self.recorder.cur_dist
@@ -112,6 +127,7 @@ class App:
         if self.cfg.get("beep_on_brake") and cue and cue.dist_to <= 0 and self._beeped_zone != (s.lap, cue.zone.idx):
             self._beeped_zone = (s.lap, cue.zone.idx)
             beep()
+        self._voice_events(s, cue)
 
         if self.lap_flash and time.monotonic() - self.lap_flash["created"] > LAP_FLASH_SECONDS:
             self.lap_flash = None
@@ -138,6 +154,7 @@ class App:
                 "live": sec.live_delta, "ideal": sec.ideal(),
             },
             "lap_flash": self.lap_flash,
+            "fuel": self._fuel_state(s),
         })
 
     # --- referencia y vueltas -------------------------------------------
@@ -148,6 +165,10 @@ class App:
             return
         self.ref_key = key
         lap, origin = find_reference(self.store, track, car, use_history=not self.demo)
+        self.fuel_laps, self.ve_laps = [], []
+        self.hist_fuel = self.hist_ve = None
+        if not self.demo:
+            threading.Thread(target=self._load_history, args=(track, car), daemon=True).start()
         self.ref_pinned = origin == "fijada"
         self._set_reference(lap)
         if lap:
@@ -163,6 +184,8 @@ class App:
         self.ref_time = lap.lap_time
 
     def _on_lap(self, lap, lap_time, valid, reason):
+        self._learn_consumption(reason)
+        self._say_lap(lap_time, valid, reason)
         sec = self.coach.sectors
         sec.finish_lap(lap_time, valid)
         if lap:
@@ -180,6 +203,102 @@ class App:
         save_async(self.store, lap)
         if is_best and not self.ref_pinned:  # una referencia fijada a mano no se sustituye
             self._set_reference(lap)
+
+    # --- combustible y energía ------------------------------------------
+
+    def _load_history(self, track, car):
+        """Consumo típico con este coche y circuito (tus sesiones), para tener dato desde la vuelta 1."""
+        try:
+            from .lapstats import history_consumption, own_sessions
+            from .paths import IMPORTED_DIR
+            from .sessions import SessionIndex, find_telemetry_dir
+            idx = SessionIndex(find_telemetry_dir(), INDEX_PATH, IMPORTED_DIR)
+            c = history_consumption(own_sessions(idx.sessions, track, car), max_sessions=6)
+            self.hist_fuel, self.hist_ve = c.fuel, c.ve
+        except Exception:
+            pass
+
+    def _learn_consumption(self, reason):
+        s = self._cur
+        if s is None or self._lap_fuel0 is None or (reason and "boxes" in reason):
+            return
+        if s.fuel is not None:
+            used = self._lap_fuel0 - s.fuel
+            if 0.05 < used < 30:
+                self.fuel_laps = (self.fuel_laps + [used])[-5:]
+        if s.ve is not None and self._lap_ve0 is not None:
+            used = self._lap_ve0 - s.ve
+            if 0.05 < used < 50:
+                self.ve_laps = (self.ve_laps + [used])[-5:]
+
+    def _per_lap(self):
+        import statistics
+        fuel = statistics.median(self.fuel_laps) if self.fuel_laps else self.hist_fuel
+        ve = statistics.median(self.ve_laps) if self.ve_laps else self.hist_ve
+        return fuel, ve
+
+    def _fuel_state(self, s):
+        fuel_pl, ve_pl = self._per_lap()
+        out = {}
+        if s.fuel is not None and fuel_pl:
+            out["fuel_laps"] = s.fuel / fuel_pl
+        if s.ve is not None and ve_pl:
+            out["ve_laps"] = s.ve / ve_pl
+        return out
+
+    def _fuel_warning(self):
+        st = self._fuel_state(self._cur) if self._cur else {}
+        for key, what in (("fuel_laps", "Combustible"), ("ve_laps", "Energía")):
+            v = st.get(key)
+            if v is not None and v < 2.5:
+                n = int(v)
+                amount = "menos de una vuelta" if n < 1 else ("una vuelta" if n == 1 else f"{n} vueltas")
+                self.speaker.say(f"{what} para {amount}")
+                return
+
+    # --- voz ---------------------------------------------------------------
+
+    def _voice_toggled(self, on):
+        self.cfg["voice"] = on
+        self.speaker.enabled = on
+        if on:
+            self.speaker.say("Avisos por voz activados")
+
+    def _voice_events(self, s, cue):
+        sp = self.speaker
+        if not sp.enabled:
+            return
+        # «frena» un instante antes del punto de frenada (la voz tarda unas décimas en sonar)
+        if cue and not cue.braking and 0 < cue.dist_to <= max(s.speed / 3.6 * 0.45, 8):
+            key = ("brake", cue.zone.idx)
+            if key not in self._spoken:
+                self._spoken.add(key)
+                sp.say("frena")
+        # balance de la frenada que acabas de pasar, si has ganado o perdido algo apreciable
+        fb = self.coach.last_feedback
+        if fb is not None and fb is not self._last_fb:
+            self._last_fb = fb
+            if abs(fb.time_diff) >= 0.15:
+                verb = "pierdes" if fb.time_diff > 0 else "ganas"
+                sp.say(f"{verb} {gap_es(fb.time_diff)} en la {fb.zone.idx}")
+        reason = self.recorder.invalid_reason or ""
+        if self.recorder.started_clean and "límites" in reason and "invalid" not in self._spoken:
+            self._spoken.add("invalid")
+            sp.say("vuelta invalidada")
+
+    def _say_lap(self, lap_time, valid, reason):
+        if not self.speaker.enabled or not self.recorder.started_clean or lap_time < LapRecorder.MIN_LAP_TIME:
+            return
+        if not valid:
+            self.speaker.say("vuelta no válida")
+            return
+        t = lap_time_es(lap_time)
+        if self.ref_time is None or lap_time < self.ref_time:
+            gain = f", {gap_es(lap_time - self.ref_time)} mejor" if self.ref_time else ""
+            self.speaker.say(f"Nueva mejor vuelta. {t}{gain}")
+        else:
+            self.speaker.say(f"{t}. Más {gap_es(lap_time - self.ref_time)}")
+
 
 
 def main(argv=None):

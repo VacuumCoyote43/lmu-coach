@@ -276,6 +276,7 @@ class SessionData:
         try:
             self.laps = read_laps(con)
             freqs = dict((n, f) for n, f, _ in con.execute("select * from channelsList").fetchall())
+            self._freqs = freqs
             self.t0 = con.execute('select value from "GPS Time" limit 1').fetchone()[0]
             self._ch = {}
             for key, (table, scale) in self.CHANNELS.items():
@@ -298,9 +299,76 @@ class SessionData:
             offsets[j + 1:] = c
         self._ch["lapdist"] = (ld_t, ld + offsets)
         self._cache = {}
+        self.channel_errors = {}
 
     def lap(self, num: int) -> LapInfo | None:
         return next((l for l in self.laps if l.num == num), None)
+
+    def channel(self, table: str):
+        """Canal periódico bajo demanda: (tiempos, valores (n, k)); k = 1 o 4 (una columna por rueda).
+        None si la sesión no lo tiene."""
+        key = ("ch", table)
+        if key in self._cache:
+            return self._cache[key]
+        out = None
+        if table in self._freqs:
+            con = _connect(self.info.path)
+            try:
+                # sin parámetros enlazados: en el .exe duckdb los gestiona con módulos (uuid…) que no siempre van
+                safe = table.replace("'", "''")
+                cols = [r[0] for r in con.execute(
+                    "select column_name from information_schema.columns "
+                    f"where table_name = '{safe}' order by ordinal_position").fetchall()]
+                cols = [c for c in cols if c.startswith("value")]
+                data = con.execute(f'select {", ".join(cols)} from "{table}"').fetchnumpy()
+                vals = np.stack([data[c].astype(np.float64) for c in cols], axis=1)
+                t = self.t0 + np.arange(len(vals)) / float(self._freqs[table])
+                out = (t, vals)
+            except Exception as e:  # no romper la pestaña, pero dejar constancia del motivo
+                self.channel_errors[table] = f"{type(e).__name__}: {e}"
+                out = None
+            finally:
+                con.close()
+        self._cache[key] = out
+        return out
+
+    def event_state(self, table: str, times):
+        """Estado (bool) de un canal de eventos (p. ej. ABS) en cada instante; None si no existe."""
+        key = ("ev", table)
+        if key not in self._cache:
+            con = _connect(self.info.path)
+            try:
+                self._cache[key] = _events(con, table)
+            finally:
+                con.close()
+        ev = self._cache[key]
+        if not ev:
+            return None
+        ts = np.array([e[0] for e in ev])
+        vals = np.array([bool(e[1]) for e in ev])
+        i = np.searchsorted(ts, times, side="right") - 1
+        out = vals[np.clip(i, 0, len(vals) - 1)]
+        out[i < 0] = False
+        return out
+
+    def setup(self) -> dict:
+        """Reglaje de la sesión: {clave: (nombre, valor en texto)}."""
+        if "setup" in self._cache:
+            return self._cache["setup"]
+        con = _connect(self.info.path)
+        try:
+            raw = dict(con.execute("select key, value from metadata").fetchall()).get("CarSetup", "")
+        finally:
+            con.close()
+        out = {}
+        try:
+            for k, v in json.loads(raw).items():
+                if isinstance(v, dict) and v.get("available", True):
+                    out[k] = (v.get("caption") or k, str(v.get("stringValue", v.get("value", ""))).strip())
+        except (ValueError, TypeError):
+            pass
+        self._cache["setup"] = out
+        return out
 
     def lap_data(self, num: int) -> dict:
         """Arrays numpy a 50 Hz: t, d, v (km/h), thr, brk (0..1), steer (-1..1), gear, rpm, x, y (m)."""

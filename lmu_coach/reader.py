@@ -40,6 +40,9 @@ class Sample:
     car: str
     in_realtime: bool
     sector: int = 0      # 0, 1, 2 (sector actual según el juego)
+    fuel: float | None = None        # litros
+    fuel_capacity: float | None = None
+    ve: float | None = None          # energía virtual (%; None si el coche no la usa)
 
 
 def _s(b: bytes) -> str:
@@ -143,7 +146,19 @@ class LMUReader:
             car=_s(tel.mVehicleName) or _s(vs.mVehicleName),
             in_realtime=bool(si.mInRealtime),
             sector=tel.mCurrentSector & 0x7FFFFFFF,  # el bit de signo indica pit lane
+            fuel=tel.mFuel,
+            fuel_capacity=tel.mFuelCapacity or None,
+            ve=self._ve_percent(tel.mVirtualEnergy),
         )
+
+    _ve_seen_max = 0.0
+
+    def _ve_percent(self, v: float):
+        """LMU puede dar la energía virtual como fracción (0–1) o en %; la devolvemos siempre en %."""
+        if not v or v < 0:
+            return None
+        self._ve_seen_max = max(self._ve_seen_max, v)
+        return v * 100.0 if self._ve_seen_max <= 1.0001 else v
 
     def _interp_dist(self, scoring_dist, speed_ms, et, track_len):
         """El scoring llega a ~5 Hz; integramos la velocidad entre medias."""
@@ -237,4 +252,7 @@ class DemoReader:
             in_pits=False, lap_invalid=False, last_lap_time=self._last_lap_time,
             track="Circuito Demo", car="Demo GT3", in_realtime=True,
             sector=0 if self._dist < 1000 else 1 if self._dist < 2100 else 2,
+            fuel=max(0.0, 30.0 - (self._lap * self.TRACK_LEN + self._dist) / self.TRACK_LEN * 2.1),
+            fuel_capacity=90.0,
+            ve=max(0.0, 40.0 - (self._lap * self.TRACK_LEN + self._dist) / self.TRACK_LEN * 3.4),
         )

@@ -11,13 +11,14 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
-from .. import analysis, share
+from .. import analysis, lapstats, share
 from ..laps import LapStore, fmt_time
 from ..paths import ASSETS_DIR, IMPORTED_DIR, INDEX_PATH, LAPS_DIR, PROJECT_ROOT, coach_command
 from ..sessions import SessionData, SessionIndex, SessionInfo, find_telemetry_dir
 from . import theme
 from .charts import TelemetryCharts, TrackMap
 from .diagnostics_dialog import DiagnosticsDialog
+from .insights import AssistantTab, ConsistencyTab, FuelTab, ProgressDialog, SetupTab, TyresTab
 from .lap_picker import LapPicker
 from .replay import ReplayView
 from .update_dialog import CheckWorker, UpdateDialog
@@ -334,6 +335,10 @@ class SessionView(QWidget):
         self.export_btn.setToolTip("Guarda esta sesión en un archivo .lmusession para pasársela a otro piloto")
         self.remove_btn = QPushButton("🗑  Quitar importada")
         self.remove_btn.setToolTip("Borra la copia importada de la app (no toca nada de LMU)")
+        self.progress_btn = QPushButton("📈  Progreso")
+        self.progress_btn.setToolTip("Tu evolución con este coche y circuito, y tu vuelta ideal")
+        self.progress_btn.clicked.connect(self._show_progress)
+        head.addWidget(self.progress_btn, 0, Qt.AlignTop)
         head.addWidget(self.export_btn, 0, Qt.AlignTop)
         head.addWidget(self.remove_btn, 0, Qt.AlignTop)
         lay.addLayout(head)
@@ -378,6 +383,18 @@ class SessionView(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(self.charts, "📈  Gráficas")
         self.tabs.addTab(self.replay, "▶  Repetición")
+        self.fuel_tab = FuelTab()
+        self.setup_tab = SetupTab()
+        self.cons_tab = ConsistencyTab()
+        self.tyres_tab = TyresTab()
+        self.tabs.addTab(self.fuel_tab, "⛽  Combustible y estrategia")
+        self.tabs.addTab(self.setup_tab, "🔧  Reglaje")
+        self.tabs.addTab(self.cons_tab, "🎯  Consistencia")
+        self.tabs.addTab(self.tyres_tab, "🛞  Neumáticos y frenos")
+        self.assistant_tab = AssistantTab()
+        self.tabs.addTab(self.assistant_tab, "🧠  Asistente de reglaje")
+        self._loaded_tabs = set()
+        self._stats_cache = {}
         split.addWidget(self.tabs)
 
         zones_box = QWidget()
@@ -406,7 +423,7 @@ class SessionView(QWidget):
         self.zones.itemSelectionChanged.connect(self._zone_selected)
         self.charts.cursor_moved.connect(self.map.set_cursor)
         self.replay.position_changed.connect(self._replay_moved)
-        self.tabs.currentChanged.connect(lambda i: self.replay.setFocus() if self.tabs.widget(i) is self.replay else None)
+        self.tabs.currentChanged.connect(self._tab_changed)
         self.pin_btn.clicked.connect(self._pin)
         self.unpin_btn.clicked.connect(self._unpin)
         self.export_btn.clicked.connect(self._export)
@@ -438,9 +455,11 @@ class SessionView(QWidget):
         self.subtitle.setText(f"{who}{SESSION_TYPES.get(i.session_type, i.session_type)}  ·  {i.recorded}  ·  "
                               f"{i.weather}  ·  {i.car_class}  ·  {best}")
         self.remove_btn.setVisible(i.imported)
+        self._loaded_tabs = set()
         self._fill_compare()
         self._fill_laps()
         self._update_coach_ref()
+        self._tab_changed(self.tabs.currentIndex())  # si hay abierta una pestaña de análisis, recalcularla
 
     def _fill_laps(self):
         laps = self.sd.laps
@@ -485,6 +504,8 @@ class SessionView(QWidget):
         if not rows or not self.sd:
             return
         self.lap_num = self.laps.item(rows[0].row(), 0).data(Qt.UserRole)
+        if self.tyres_tab in self._loaded_tabs:
+            self.tyres_tab.set_lap(self.lap_num)
         self._refresh_analysis()
 
     def _fill_compare(self):
@@ -747,6 +768,50 @@ class SessionView(QWidget):
             QMessageBox.warning(self, "No se pudo quitar", str(e))
             return
         self.removed.emit(info.path)
+
+
+    # --- pestañas de análisis (se calculan al abrirlas) --------------------
+
+    def _own_infos(self):
+        i = self.sd.info
+        return lapstats.own_sessions(self.index_getter().sessions, i.track, i.car)
+
+    def _lap_stats(self):
+        key = self.sd.info.path
+        if key not in self._stats_cache:
+            self._stats_cache[key] = lapstats.lap_stats(self.sd)
+        return self._stats_cache[key]
+
+    def _tab_changed(self, i):
+        w = self.tabs.widget(i)
+        if w is self.replay:
+            self.replay.setFocus()
+        if not self.sd or w in self._loaded_tabs:
+            return
+        if w in (self.fuel_tab, self.setup_tab, self.cons_tab, self.tyres_tab, self.assistant_tab):
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                if w is self.fuel_tab:
+                    self.fuel_tab.set_data(self._lap_stats(), self._own_infos())
+                elif w is self.setup_tab:
+                    self.setup_tab.set_data(self.sd, self._own_infos())
+                elif w is self.cons_tab:
+                    self.cons_tab.set_data(self.sd)
+                elif w is self.assistant_tab:
+                    self.assistant_tab.set_data(self.sd, self._own_infos())
+                elif w is self.tyres_tab:
+                    self.tyres_tab.set_data(self._lap_stats())
+                    if self.lap_num is not None:
+                        self.tyres_tab.set_lap(self.lap_num)
+                self._loaded_tabs.add(w)
+            finally:
+                QApplication.restoreOverrideCursor()
+
+    def _show_progress(self):
+        if not self.sd:
+            return
+        i = self.sd.info
+        ProgressDialog(self, f"{short_track(i.track)} · {i.car}", self._own_infos()).exec()
 
 
 # --------------------------------------------------------------------------- ventana
