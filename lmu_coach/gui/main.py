@@ -11,14 +11,15 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
-from .. import analysis, lapstats, share
+from .. import analysis, corners, lapstats, share
 from ..laps import LapStore, fmt_time
 from ..paths import ASSETS_DIR, IMPORTED_DIR, INDEX_PATH, LAPS_DIR, PROJECT_ROOT, coach_command
 from ..sessions import SessionData, SessionIndex, SessionInfo, find_telemetry_dir
 from . import car_pix, theme
 from .charts import TelemetryCharts, TrackMap
 from .diagnostics_dialog import DiagnosticsDialog
-from .insights import AssistantTab, ConsistencyTab, FuelTab, ProgressDialog, SetupTab, TyresTab
+from .insights import (AssistantTab, ConsistencyTab, FuelTab, PaceTab, ProgressDialog, SetupTab, TrainingDialog,
+                       TyresTab, RankingDialog)
 from .lap_picker import LapPicker
 from .replay import ReplayView
 from .update_dialog import CheckWorker, UpdateDialog
@@ -349,6 +350,10 @@ class SessionView(QWidget):
         self.progress_btn = QPushButton("📈  Progreso")
         self.progress_btn.setToolTip("Tu evolución con este coche y circuito, y tu vuelta ideal")
         self.progress_btn.clicked.connect(self._show_progress)
+        self.plan_btn = QPushButton("🎯  Plan")
+        self.plan_btn.setToolTip("Las curvas donde más pierdes frente a tu mejor vuelta y qué cambiar")
+        self.plan_btn.clicked.connect(self._show_plan)
+        head.addWidget(self.plan_btn, 0, Qt.AlignTop)
         head.addWidget(self.progress_btn, 0, Qt.AlignTop)
         head.addWidget(self.export_btn, 0, Qt.AlignTop)
         head.addWidget(self.remove_btn, 0, Qt.AlignTop)
@@ -402,6 +407,8 @@ class SessionView(QWidget):
         self.tabs.addTab(self.setup_tab, "🔧  Reglaje")
         self.tabs.addTab(self.cons_tab, "🎯  Consistencia")
         self.tabs.addTab(self.tyres_tab, "🛞  Neumáticos y frenos")
+        self.pace_tab = PaceTab()
+        self.tabs.addTab(self.pace_tab, "📉  Ritmo y relevos")
         self.assistant_tab = AssistantTab()
         self.tabs.addTab(self.assistant_tab, "🧠  Asistente de reglaje")
         self._loaded_tabs = set()
@@ -432,6 +439,7 @@ class SessionView(QWidget):
         self.laps.setContextMenuPolicy(Qt.CustomContextMenu)
         self.laps.customContextMenuRequested.connect(self._laps_menu)
         self.zones.itemSelectionChanged.connect(self._zone_selected)
+        self.zones.cellDoubleClicked.connect(self._rename_zone)
         self.charts.cursor_moved.connect(self.map.set_cursor)
         self.replay.position_changed.connect(self._replay_moved)
         self.tabs.currentChanged.connect(self._tab_changed)
@@ -674,6 +682,26 @@ class SessionView(QWidget):
         self.charts.set_cursor(d)
         self.map.set_cursor(d)
 
+    def _rename_zone(self, row, col):
+        if col != 0 or not self.sd:
+            return
+        from PySide6.QtWidgets import QInputDialog
+        z = self.zone_results[self.zones.item(row, 0).data(Qt.UserRole)].zone
+        i = self.sd.info
+        cur = corners.name_for(i.track, i.layout, z.apex) or ""
+        default = corners.default_name(i.track, i.layout, z.apex)
+        hint = f" (de serie: {default})" if default else ""
+        text, ok = QInputDialog.getText(self, "Nombre de la curva",
+                                        f"F{z.idx}, vértice a {z.apex:.0f} m{hint}.\n"
+                                        "Déjalo vacío para volver al nombre de serie.", text=cur)
+        if not ok:
+            return
+        if text.strip():
+            corners.set_name(i.track, i.layout, z.apex, text)
+        else:
+            corners.reset_name(i.track, i.layout, z.apex)
+        self._fill_zones()
+
     def _fill_zones(self):
         t = self.zones
         res = self.zone_results
@@ -681,7 +709,9 @@ class SessionView(QWidget):
         t.setRowCount(len(res))
         for r, z in enumerate(res):
             col = theme.RED if z.time_diff > 0.02 else theme.GREEN if z.time_diff < -0.02 else theme.MUTED
-            name = item(f"F{z.zone.idx}  ·  {z.zone.start:.0f} m", color=theme.AMBER)
+            i = self.sd.info
+            name = item(corners.label(z.zone, i.track, i.layout), color=theme.AMBER)
+            name.setToolTip(f"Frena a {z.zone.start:.0f} m · doble clic para ponerle nombre")
             name.setData(Qt.UserRole, r)
             t.setItem(r, 0, name)
             t.setItem(r, 1, item(f"{z.time_diff:+.3f} s", Qt.AlignRight | Qt.AlignVCenter, col, bold=True))
@@ -803,7 +833,7 @@ class SessionView(QWidget):
             self.replay.setFocus()
         if not self.sd or w in self._loaded_tabs:
             return
-        if w in (self.fuel_tab, self.setup_tab, self.cons_tab, self.tyres_tab, self.assistant_tab):
+        if w in (self.fuel_tab, self.setup_tab, self.cons_tab, self.tyres_tab, self.assistant_tab, self.pace_tab):
             QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
                 if w is self.fuel_tab:
@@ -814,6 +844,8 @@ class SessionView(QWidget):
                     self.cons_tab.set_data(self.sd)
                 elif w is self.assistant_tab:
                     self.assistant_tab.set_data(self.sd, self._own_infos())
+                elif w is self.pace_tab:
+                    self.pace_tab.set_data(self._lap_stats())
                 elif w is self.tyres_tab:
                     self.tyres_tab.set_data(self._lap_stats())
                     if self.lap_num is not None:
@@ -821,6 +853,16 @@ class SessionView(QWidget):
                 self._loaded_tabs.add(w)
             finally:
                 QApplication.restoreOverrideCursor()
+
+    def _show_plan(self):
+        if not self.sd:
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            dlg = TrainingDialog(self, self.sd)
+        finally:
+            QApplication.restoreOverrideCursor()
+        dlg.exec()
 
     def _show_progress(self):
         if not self.sd:
@@ -859,6 +901,10 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         tb.addWidget(spacer)
+        self.rank_btn = QPushButton("🏆  Ranking")
+        self.rank_btn.setToolTip("Tus tiempos frente a los de las sesiones importadas de otros pilotos")
+        self.rank_btn.clicked.connect(lambda: RankingDialog(self, self.index.sessions, short_track).exec())
+        tb.addWidget(self.rank_btn)
         self.import_btn = QPushButton("⬇  Importar sesión")
         self.import_btn.setToolTip("Abre un .lmusession que te haya pasado otro piloto (también puedes arrastrarlo aquí)")
         self.import_btn.clicked.connect(self._choose_import)

@@ -43,6 +43,19 @@ class Sample:
     fuel: float | None = None        # litros
     fuel_capacity: float | None = None
     ve: float | None = None          # energía virtual (%; None si el coche no la usa)
+    tyre_temp: list | None = None    # °C por rueda (media de la banda: interior, centro, exterior)
+    tyre_opt: float | None = None    # °C óptimos del compuesto según el juego
+    brake_temp: list | None = None   # °C por rueda
+
+
+def _celsius(v: float) -> float:
+    """Las temperaturas de neumático vienen en kelvin."""
+    return v - 273.15 if v > 200 else v
+
+
+def _opt_temp(v: float) -> float | None:
+    c = _celsius(v) if v else None
+    return c if c is not None and 20 < c < 160 else None
 
 
 def _s(b: bytes) -> str:
@@ -149,7 +162,73 @@ class LMUReader:
             fuel=tel.mFuel,
             fuel_capacity=tel.mFuelCapacity or None,
             ve=self._ve_percent(tel.mVirtualEnergy),
+            tyre_temp=[_celsius(sum(w.mTemperature) / 3) for w in tel.mWheel],
+            tyre_opt=_opt_temp(tel.mWheel[0].mOptimalTemp),
+            brake_temp=[w.mBrakeTemp for w in tel.mWheel],
         )
+
+    def _telem_all(self):
+        """(índice del jugador, [TelemInfoV01 de cada coche activo])."""
+        hdr = C.string_at(self._view + self._off_tel, 3)
+        active, player_idx = min(hdr[0], MAX_VEHICLES), hdr[1]
+        tels = [self._copy(TelemInfoV01, self._off_telinfo + i * C.sizeof(TelemInfoV01)) for i in range(active)]
+        return player_idx, tels
+
+    def spotter_frame(self):
+        """Tu posición, velocidad y volante, y la posición de los demás (para el spotter)."""
+        from .spotter import SpotFrame
+        if not self.connect():
+            return None
+        idx, tels = self._telem_all()
+        if idx >= len(tels):
+            return None
+        me = tels[idx]
+        o, l = me.mOri, me.mLocalVel
+        vx = o[0].x * l.x + o[0].y * l.y + o[0].z * l.z
+        vz = o[2].x * l.x + o[2].y * l.y + o[2].z * l.z
+        others = []
+        for i, t in enumerate(tels):
+            if i == idx:
+                continue
+            v = t.mLocalVel
+            others.append((t.mPos.x, t.mPos.z, (v.x * v.x + v.y * v.y + v.z * v.z) ** 0.5))
+        return SpotFrame((me.mPos.x, me.mPos.z), (vx, vz), me.mUnfilteredSteering, others)
+
+    def damage(self):
+        """Daños de tu coche: abolladuras (8 zonas), piezas sueltas, pinchazos, ruedas perdidas, motor."""
+        if not self.connect():
+            return None
+        idx, tels = self._telem_all()
+        if idx >= len(tels):
+            return None
+        t = tels[idx]
+        return {"dents": list(t.mDentSeverity), "detached": bool(t.mDetached),
+                "flat": [bool(w.mFlat) for w in t.mWheel], "wheel_off": [bool(w.mDetached) for w in t.mWheel],
+                "overheating": bool(t.mOverheating)}
+
+    def race_info(self):
+        """Clasificación de todos los coches (para el ingeniero de carrera); None si no hay datos."""
+        from .engineer import RaceCar, RaceInfo
+        if not self.connect():
+            return None
+        si = self._copy(ScoringInfoV01, self._off_si)
+        n = max(0, min(si.mNumVehicles, MAX_VEHICLES))
+        cars = []
+        for i in range(n):
+            v = self._copy(VehicleScoringInfoV01, self._off_vsc + i * C.sizeof(VehicleScoringInfoV01))
+            cars.append(RaceCar(place=v.mPlace, cls=_s(v.mVehicleClass), driver=_s(v.mDriverName) or str(v.mID),
+                                laps=v.mTotalLaps, lap_dist=v.mLapDist, in_pits=bool(v.mInPits),
+                                pitstops=v.mNumPitstops, is_player=bool(v.mIsPlayer), best=v.mBestLapTime,
+                                last=v.mLastLapTime, est=v.mEstimatedLapTime, finished=v.mFinishStatus != 0,
+                                behind_leader=v.mTimeBehindLeader, laps_behind_leader=v.mLapsBehindLeader))
+        timed = 0 < si.mEndET < 1e7
+        laps_left = None
+        if 0 < si.mMaxLaps < 10000:
+            lead = max((c.laps for c in cars), default=0)
+            laps_left = max(0, si.mMaxLaps - lead)
+        # carrera con bandera verde (5) o coche de seguridad (6)
+        return RaceInfo(is_race=si.mSession >= 10 and si.mGamePhase in (5, 6), track_len=si.mLapDist,
+                        time_left=(si.mEndET - si.mCurrentET) if timed else None, laps_left=laps_left, cars=cars)
 
     _ve_seen_max = 0.0
 
@@ -171,6 +250,12 @@ class LMUReader:
                 self._dist -= track_len
         self._last_et = et
         return self._dist
+
+
+class _DemoRace:
+    """Rivales con ritmo fijo alrededor del coche de la demo."""
+    RIVALS = [("Rival A", "GT3", -2.5, 0.995), ("Rival B", "GT3", 1.6, 1.004), ("Rival C", "GT3", 4.0, 1.01),
+              ("Prototipo", "Hypercar", -40.0, 0.88)]
 
 
 class DemoReader:
@@ -197,6 +282,22 @@ class DemoReader:
 
     def connect(self):
         return True
+
+    def race_info(self):
+        from .engineer import RaceCar, RaceInfo
+        L = self.TRACK_LEN
+        me_prog = self._lap + self._dist / L
+        lap_t = self._last_lap_time if self._last_lap_time > 0 else 53.0
+        t = me_prog * lap_t
+        cars = [RaceCar(0, "GT3", "Tú (demo)", self._lap, self._dist, False, 0, True, lap_t, lap_t, lap_t)]
+        for name, cls, start, pace in _DemoRace.RIVALS:
+            prog = max(0.0, (t - start) / (lap_t * pace))
+            cars.append(RaceCar(0, cls, name, int(prog), (prog % 1) * L, False, 0, False, lap_t * pace,
+                                lap_t * pace, lap_t * pace))
+        order = sorted(cars, key=lambda c: -(c.laps + c.lap_dist / L))
+        for p, c in enumerate(order, 1):
+            c.place = p
+        return RaceInfo(is_race=True, track_len=L, time_left=max(0.0, 1800 - t), laps_left=None, cars=cars)
 
     def close(self):
         pass
@@ -255,4 +356,7 @@ class DemoReader:
             fuel=max(0.0, 30.0 - (self._lap * self.TRACK_LEN + self._dist) / self.TRACK_LEN * 2.1),
             fuel_capacity=90.0,
             ve=max(0.0, 40.0 - (self._lap * self.TRACK_LEN + self._dist) / self.TRACK_LEN * 3.4),
+            tyre_temp=[78 + 6 * math.sin(now / 9 + k) + (4 if k < 2 else 0) for k in range(4)],
+            tyre_opt=80.0,
+            brake_temp=[300 + 420 * brk + (60 if k < 2 else 0) for k in range(4)],
         )

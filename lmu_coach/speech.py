@@ -177,6 +177,62 @@ class Speaker:
             self._proc = None
 
 
+# --- cola de mensajes ------------------------------------------------------------------------
+
+import time as _time
+
+CHARS_PER_S = 9.0      # ritmo de las voces de Windows a velocidad 1,0 (medido)
+GAP_S = 0.7            # silencio entre mensajes
+
+
+class VoiceQueue:
+    """Ordena lo que dice el coach para que no se pisen los mensajes.
+
+    - Un mensaje urgente (interrupt) corta lo que esté sonando: solo «frena» y el spotter.
+    - El resto espera a que acabe el anterior más una pausa.
+    - Cada mensaje caduca (ttl): si espera demasiado, ya no sirve y no se dice.
+    - Un mensaje del mismo tipo (kind) sustituye al que esperaba (p. ej. la posición más reciente).
+    """
+
+    def __init__(self, speaker: "Speaker"):
+        self.sp = speaker
+        self.queue = []          # [prioridad, creado, caduca, tipo, texto]
+        self.busy_until = 0.0
+        self.log = None          # lista para pruebas: (instante, texto)
+
+    def _duration(self, text: str) -> float:
+        return 0.25 + len(text) / (CHARS_PER_S * max(0.5, self.sp.rate))
+
+    def _speak(self, text: str, now: float):
+        self.sp.say(text)
+        self.busy_until = now + self._duration(text) + GAP_S
+        if self.log is not None:
+            self.log.append((now, text))
+
+    def say(self, text: str, kind: str = "info", prio: int = 1, ttl: float = 6.0, interrupt=False, now=None):
+        if not self.sp.enabled or not text:
+            return
+        now = _time.monotonic() if now is None else now
+        if interrupt:
+            self._speak(text, now)
+            return
+        self.queue = [m for m in self.queue if m[3] != kind or kind == "info"]
+        self.queue.append([prio, now, now + ttl, kind, text])
+        self.tick(now)
+
+    def tick(self, now=None):
+        now = _time.monotonic() if now is None else now
+        self.queue = [m for m in self.queue if m[2] > now]
+        if not self.queue or now < self.busy_until:
+            return
+        self.queue.sort(key=lambda m: (-m[0], m[1]))
+        m = self.queue.pop(0)
+        self._speak(m[4], now)
+
+    def clear(self):
+        self.queue = []
+
+
 # --- frases ---------------------------------------------------------------------------------
 
 _UNITS = ["cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez",

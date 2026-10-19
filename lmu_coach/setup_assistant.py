@@ -139,6 +139,7 @@ class ZoneBalance:
     exit: float | None
     counter: int             # nº de vueltas con contravolante en la zona
     laps: int
+    apex: float = 0.0        # m
 
 
 @dataclass
@@ -217,7 +218,8 @@ def analyze(sd, own_infos=None) -> Report:
                 counters[z.idx] += 1
     for z in zones:
         dev = lambda ph: statistics.median(phase_vals[(z.idx, ph)]) if phase_vals.get((z.idx, ph)) else None
-        rep.zones.append(ZoneBalance(z.idx, z.start, dev("entry"), dev("mid"), dev("exit"), counters[z.idx], len(laps)))
+        rep.zones.append(ZoneBalance(z.idx, z.start, dev("entry"), dev("mid"), dev("exit"), counters[z.idx], len(laps),
+                                     apex=z.apex))
 
     rep.suggestions = _suggest(rep, sd, laps, setup, own_infos or [])
     rep.suggestions.sort(key=lambda x: x.priority)

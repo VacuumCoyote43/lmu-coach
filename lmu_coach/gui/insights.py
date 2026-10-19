@@ -8,9 +8,10 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout,
-    QHeaderView, QLabel, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QHeaderView, QLabel, QPushButton, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .. import corners
 from .. import lapstats as ls
 from ..laps import fmt_time
 from . import theme
@@ -270,6 +271,7 @@ class ConsistencyTab(QWidget):
                             "una con tu mejor vuelta. Cuanto más baja, más constante."))
 
     def set_data(self, sd):
+        self.track = (sd.info.track, sd.info.layout)
         zones, lap_sd, n = ls.consistency(sd)
         t = self.table
         if not zones:
@@ -292,7 +294,7 @@ class ConsistencyTab(QWidget):
                 tips.append(f"frenas en un punto distinto cada vuelta (±{z.brake_sd:.0f} m)")
             if z.min_speed_sd > 4:
                 tips.append(f"velocidad de paso variable (±{z.min_speed_sd:.0f} km/h)")
-            t.setItem(r, 0, _it(f"F{z.idx} · {z.start:.0f} m", color=theme.AMBER))
+            t.setItem(r, 0, _it(corners.label(z, *self.track), color=theme.AMBER, tip=f"Frena a {z.start:.0f} m"))
             t.setItem(r, 1, _it(f"±{z.brake_sd:.1f} m", RIGHT, theme.AMBER if z.brake_sd > 8 else None))
             t.setItem(r, 2, _it(f"±{z.min_speed_sd:.1f} km/h", RIGHT, theme.AMBER if z.min_speed_sd > 4 else None))
             t.setItem(r, 3, _it(f"±{z.time_sd:.3f} s", RIGHT, col, bold=True))
@@ -511,6 +513,7 @@ class AssistantTab(QWidget):
         return f"{v:+.1f}°", theme.MUTED, "neutro"
 
     def set_data(self, sd, own_infos):
+        self.track = (sd.info.track, sd.info.layout)
         from .. import setup_assistant as sa
         rep = sa.analyze(sd, own_infos)
         if not rep.laps_used:
@@ -547,7 +550,7 @@ class AssistantTab(QWidget):
         b = self.balance
         b.setRowCount(len(rep.zones))
         for r, z in enumerate(rep.zones):
-            b.setItem(r, 0, _it(f"F{z.idx} · {z.start:.0f} m", color=theme.AMBER))
+            b.setItem(r, 0, _it(corners.label(z, *self.track), color=theme.AMBER, tip=f"Frena a {z.start:.0f} m"))
             for c, v in enumerate((z.entry, z.mid, z.exit), start=1):
                 txt, col, tip = self._phase(v)
                 b.setItem(r, c, _it(txt, Qt.AlignCenter, col, tip=tip))
@@ -562,3 +565,271 @@ class AssistantTab(QWidget):
         if s and s.braking_samples:
             parts.append(f"deslizamiento en frenada: del. {s.front_slip * 100:.1f} % · tras. {s.rear_slip * 100:.1f} %")
         self.aids.setText(" · ".join(parts))
+
+
+# --------------------------------------------------------------------------- ritmo y relevos
+
+STINT_COLORS = (theme.ACCENT, theme.GREEN, theme.AMBER, theme.PURPLE)
+
+
+class PaceTab(QWidget):
+    """Ritmo vuelta a vuelta por relevo: tendencia, degradación, errores y desgaste de neumáticos."""
+
+    def __init__(self):
+        super().__init__()
+        lay = QHBoxLayout(self)
+        left = QVBoxLayout()
+        self.summary = QLabel()
+        self.summary.setWordWrap(True)
+        self.summary.setTextFormat(Qt.RichText)
+        left.addWidget(self.summary)
+        self.plot = pg.PlotWidget()
+        self.plot.showGrid(x=True, y=True, alpha=0.15)
+        self.plot.setLabel("left", "Tiempo (s)")
+        self.plot.setMouseEnabled(x=True, y=False)
+        self.tyres = pg.PlotWidget()
+        self.tyres.showGrid(x=True, y=True, alpha=0.15)
+        self.tyres.setLabel("left", "Goma (%)")
+        self.tyres.setLabel("bottom", "Vuelta")
+        self.tyres.setXLink(self.plot)
+        self.tyres.setMouseEnabled(x=True, y=False)
+        split = QSplitter(Qt.Vertical)
+        split.addWidget(self.plot)
+        split.addWidget(self.tyres)
+        split.setSizes([300, 150])
+        left.addWidget(split, 1)
+        left.addWidget(_note("Puntos: vueltas (huecos = boxes) · línea: tendencia del relevo · "
+                             "rojo: vuelta con error (≥ 1,2 s más lenta que la tendencia). "
+                             "Abajo, goma que queda: delanteras (línea) y traseras (discontinua)."))
+        lay.addLayout(left, 3)
+
+        right = QVBoxLayout()
+        right.addWidget(_note("D = delanteras · T = traseras (la peor de cada eje en «Queda»)"))
+        self.table = _table(["", "Vueltas", "Media", "Tend.", "Gomas", "Errores"], stretch=None, row_h=24)
+        self.table.horizontalHeaderItem(3).setToolTip("Tendencia: segundos que pierdes (+) o ganas (−) cada vuelta")
+        self.table.horizontalHeaderItem(4).setToolTip(
+            "Tendencia descontando lo que ayuda ir quemando combustible: aproxima la degradación de las gomas")
+        right.addWidget(self.table)
+        self.wear = _table(["", "Desgaste/vuelta", "Queda al final", "Comb./v"], stretch=None, row_h=24)
+        right.addWidget(self.wear)
+        self.errors = _table(["Vuelta", "Relevo", "Pierdes"], stretch=None, row_h=22)
+        right.addWidget(self.errors, 1)
+        lay.addLayout(right, 2)
+
+    def set_data(self, stats):
+        sts = ls.stints(stats)
+        self.plot.clear()
+        self.tyres.clear()
+        for t in (self.table, self.wear, self.errors):
+            t.setRowCount(0)
+        if not sts:
+            self.summary.setText("Hace falta al menos un relevo de 3 vueltas seguidas sin pasar por boxes.")
+            return
+        lines = ls.stint_summary(sts)
+        allc = [l.time for s in sts for l in s.clean]
+        head = (f"<b>{len(sts)} relevo(s)</b> · ritmo medio <b>{fmt_time(sum(allc) / len(allc))}</b>"
+                if allc else f"<b>{len(sts)} relevo(s)</b>")
+        self.summary.setText(head + ("<br>" + "<br>".join(f"• {x}" for x in lines) if lines else ""))
+
+        for s in sts:
+            col = STINT_COLORS[(s.idx - 1) % len(STINT_COLORS)]
+            xs = [l.num for l in s.laps]
+            ys = [l.time for l in s.laps]
+            self.plot.plot(xs, ys, pen=pg.mkPen(col, width=1, style=Qt.DotLine), symbol="o", symbolSize=6,
+                           symbolBrush=col, symbolPen=None)
+            if s.trend:
+                a, b = s.trend
+                self.plot.plot([xs[0], xs[-1]], [a + b * xs[0], a + b * xs[-1]], pen=pg.mkPen(col, width=2.5))
+            if s.mistakes:
+                self.plot.addItem(pg.ScatterPlotItem([m[0].num for m in s.mistakes], [m[0].time for m in s.mistakes],
+                                                     size=12, brush=None, pen=pg.mkPen(theme.RED, width=2)))
+            left = [(l.num, l.wear_left) for l in s.laps if len(l.wear_left) == 4]
+            if left:
+                self.tyres.plot([n for n, _ in left], [(w[0] + w[1]) / 2 for _, w in left], pen=pg.mkPen(col, width=2))
+                self.tyres.plot([n for n, _ in left], [(w[2] + w[3]) / 2 for _, w in left],
+                                pen=pg.mkPen(col, width=2, style=Qt.DashLine))
+        if allc:
+            self.plot.setYRange(min(allc) - 0.8, float(np.percentile([l.time for s in sts for l in s.laps], 98)) + 1.0)
+
+        t = self.table
+        t.setRowCount(len(sts))
+        for r, s in enumerate(sts):
+            col = STINT_COLORS[(s.idx - 1) % len(STINT_COLORS)]
+            t.setItem(r, 0, _it(f"● {s.idx}", Qt.AlignCenter, col, bold=True))
+            t.setItem(r, 1, _it(f"{len(s.laps)}", Qt.AlignCenter))
+            t.setItem(r, 2, _it(fmt_time(s.avg) if s.avg else "—", RIGHT,
+                                tip=f"Media de las vueltas limpias · mejor {fmt_time(s.best)}" if s.best else None))
+            t.setItem(r, 3, _it(_fmt(s.slope, 2, " s/v") if s.slope is None else f"{s.slope:+.2f} s/v", RIGHT,
+                                tip=None if s.slope is not None else "Pocas vueltas limpias para calcularla"))
+            deg = s.slope_fuel
+            dcol = None if deg is None else (theme.RED if deg > 0.08 else theme.AMBER if deg > 0.03 else theme.GREEN)
+            t.setItem(r, 4, _it("—" if deg is None else f"{deg:+.2f} s/v", RIGHT, dcol))
+            lost = sum(m[1] for m in s.mistakes)
+            t.setItem(r, 5, _it(f"{len(s.mistakes)} · {lost:.1f} s" if s.mistakes else "0", RIGHT,
+                                theme.RED if s.mistakes else theme.MUTED))
+
+        w = self.wear
+        w.setRowCount(len(sts))
+        for r, s in enumerate(sts):
+            col = STINT_COLORS[(s.idx - 1) % len(STINT_COLORS)]
+            w.setItem(r, 0, _it(f"● {s.idx}", Qt.AlignCenter, col, bold=True))
+            wl = s.wear_per_lap
+            w.setItem(r, 1, _it(f"D {(wl[0] + wl[1]) / 2:.2f} · T {(wl[2] + wl[3]) / 2:.2f} %" if wl else "—",
+                                tip="  ".join(f"{n} {v:.2f} %" for n, v in zip(ls.WHEELS, wl)) if wl else None))
+            le = s.wear_left
+            w.setItem(r, 2, _it(f"D {min(le[:2]):.0f} · T {min(le[2:]):.0f} %" if le else "—",
+                                tip="  ".join(f"{n} {v:.0f} %" for n, v in zip(ls.WHEELS, le)) if le else None))
+            w.setItem(r, 3, _it(_fmt(s.fuel_per_lap, 2, " L"), RIGHT))
+
+        errs = [(m, s.idx) for s in sts for m in s.mistakes]
+        e = self.errors
+        e.setRowCount(len(errs))
+        for r, ((lap, lost), idx) in enumerate(errs):
+            e.setItem(r, 0, _it(f"V{lap.num}", Qt.AlignCenter))
+            e.setItem(r, 1, _it(idx, Qt.AlignCenter, STINT_COLORS[(idx - 1) % len(STINT_COLORS)]))
+            e.setItem(r, 2, _it(f"+{lost:.1f} s", RIGHT, theme.RED))
+
+
+# --------------------------------------------------------------------------- plan de entrenamiento
+
+class TrainingDialog(QDialog):
+    """Las 3 curvas donde más pierdes frente a tu mejor vuelta y qué cambiar; se puede activar en el coach."""
+
+    def __init__(self, parent, sd):
+        from .. import training
+        super().__init__(parent)
+        self.training = training
+        info = sd.info
+        self.key = (info.track, info.car)
+        self.setWindowTitle("Plan de entrenamiento")
+        self.resize(760, 560)
+        lay = QVBoxLayout(self)
+        head = QLabel("🎯  Plan de entrenamiento")
+        head.setObjectName("title")
+        lay.addWidget(head)
+        self.focus, summ = training.build(sd)
+        if not self.focus:
+            msg = ("Hacen falta al menos 3 vueltas válidas." if summ.get("laps", 0) < 3 else
+                   "No hay ninguna curva donde pierdas tiempo de forma repetida frente a tu mejor vuelta. ¡Bien!")
+            lay.addWidget(_note(msg))
+        else:
+            lay.addWidget(QLabel(
+                f"Frente a tu mejor vuelta de esta sesión ({fmt_time(summ['best'])}), en una vuelta normal pierdes "
+                f"<b>{summ['total_loss']:.2f} s</b> en las frenadas. Estas {len(self.focus)} curvas son "
+                f"<b>{summ['focus_loss']:.2f} s</b> de eso: céntrate en ellas en tu próxima sesión."))
+            for n, f in enumerate(self.focus, 1):
+                tips = "".join(f"<br>→ {t[0].upper() + t[1:]}" for t in f.tips)
+                card = QLabel(f"<span style='color:{theme.AMBER}; font-weight:600'>{n}. {f.name}</span>"
+                              f"<span style='color:{theme.MUTED}'>  ·  pierdes {f.loss:.2f} s por vuelta de media"
+                              f" ({f.laps} vueltas)</span>{tips}")
+                card.setWordWrap(True)
+                card.setStyleSheet(f"background: {theme.PANEL}; border: 1px solid {theme.BORDER}; "
+                                   "border-radius: 6px; padding: 10px;")
+                lay.addWidget(card)
+            if info.session_type == "Race":
+                lay.addWidget(_note("Es una carrera: el tráfico hace variar las frenadas. Para un plan más fino, "
+                                    "genéralo desde una sesión de libres o clasificación."))
+        lay.addStretch(1)
+        self.status = _note()
+        lay.addWidget(self.status)
+        row = QHBoxLayout()
+        self.on_btn = QPushButton("▶  Activar en el coach")
+        self.on_btn.setObjectName("coach")
+        self.on_btn.setToolTip("Al llegar a estas curvas, el coach te recordará el objetivo (en pantalla y por voz)")
+        self.on_btn.clicked.connect(self._activate)
+        self.on_btn.setEnabled(bool(self.focus))
+        self.off_btn = QPushButton("Quitar plan del coach")
+        self.off_btn.clicked.connect(self._clear)
+        close = QPushButton("Cerrar")
+        close.clicked.connect(self.accept)
+        row.addWidget(self.on_btn)
+        row.addWidget(self.off_btn)
+        row.addStretch(1)
+        row.addWidget(close)
+        lay.addLayout(row)
+        self._refresh()
+
+    def _refresh(self):
+        cur = self.training.active(*self.key)
+        self.off_btn.setEnabled(bool(cur))
+        self.status.setText(("Plan activo en el coach: " + ", ".join(f.name for f in cur)) if cur
+                            else "Ningún plan activo en el coach para este coche y circuito.")
+
+    def _activate(self):
+        self.training.save(*self.key, self.focus)
+        self._refresh()
+
+    def _clear(self):
+        self.training.clear(*self.key)
+        self._refresh()
+
+
+# --------------------------------------------------------------------------- ranking
+
+class RankingDialog(QDialog):
+    """Tus tiempos frente a los de las sesiones importadas (mismo circuito y clase)."""
+
+    def __init__(self, parent, sessions, short_track):
+        super().__init__(parent)
+        self.sessions = sessions
+        self.setWindowTitle("Ranking")
+        self.resize(980, 520)
+        lay = QVBoxLayout(self)
+        head = QLabel("🏆  Ranking")
+        head.setObjectName("title")
+        lay.addWidget(head)
+        self.combo = QComboBox()
+        self.groups = ls.ranking_groups(sessions)
+        for t, l, c, n, imp in self.groups:
+            extra = f"  ·  {n} pilotos" if n > 1 else "  ·  solo tú"
+            name = short_track(t) + ("" if l == t else f" ({l.split(' - ')[-1]})")
+            self.combo.addItem(f"{name}  ·  {c}{extra}")
+        self.combo.currentIndexChanged.connect(self._fill)
+        lay.addWidget(self.combo)
+        self.table = _table(["#", "Piloto", "Mejor vuelta", "Dif.", "S1", "S2", "S3", "Ideal", "Coche", "Fecha"],
+                            stretch=8, row_h=28)
+        lay.addWidget(self.table, 1)
+        self.note = _note()
+        lay.addWidget(self.note)
+        if not any(g[3] > 1 for g in self.groups):
+            lay.addWidget(_note("Todavía no hay sesiones importadas de otros pilotos: cuando tu amigo te pase un "
+                                ".lmusession (⬇ Importar sesión), sus tiempos aparecen aquí junto a los tuyos."))
+        self._fill()
+
+    def _fill(self):
+        t = self.table
+        if not self.groups:
+            t.setRowCount(0)
+            return
+        track, layout, cls, _, _ = self.groups[self.combo.currentIndex()]
+        rows = ls.ranking(self.sessions, track, layout, cls)
+        t.setRowCount(len(rows))
+        best_sec = [min((r.sectors[k] for r in rows if r.sectors[k]), default=0) for k in range(3)]
+        lead = rows[0].best if rows else 0
+        for i, r in enumerate(rows):
+            me = theme.ACCENT if r.mine else None
+            t.setItem(i, 0, _it(i + 1, Qt.AlignCenter, theme.PURPLE if i == 0 else None, bold=i == 0))
+            t.setItem(i, 1, _it(("🙋 " if r.mine else "📥 ") + r.driver, color=me, bold=r.mine))
+            t.setItem(i, 2, _it(fmt_time(r.best), RIGHT, theme.PURPLE if i == 0 else None, bold=True))
+            t.setItem(i, 3, _it("—" if i == 0 else f"+{r.best - lead:.3f}", RIGHT, theme.MUTED if i == 0 else theme.RED))
+            for k in range(3):
+                v = r.sectors[k]
+                t.setItem(i, 4 + k, _it(f"{v:.3f}" if v else "—", RIGHT,
+                                        theme.PURPLE if v and v == best_sec[k] and len(rows) > 1 else None))
+            t.setItem(i, 7, _it(fmt_time(r.ideal) if r.ideal else "—", RIGHT, theme.MUTED))
+            t.setItem(i, 8, _it(r.best_car, color=theme.MUTED))
+            t.setItem(i, 9, _it(r.best_date, color=theme.MUTED))
+        mine = next((r for r in rows if r.mine), None)
+        others = [r for r in rows if not r.mine]
+        if mine and others:
+            rival = min(others, key=lambda r: r.best)
+            parts = []
+            for k in range(3):
+                if mine.sectors[k] and rival.sectors[k]:
+                    d = mine.sectors[k] - rival.sectors[k]
+                    parts.append(f"S{k + 1} {'+' if d > 0 else ''}{d:.3f}")
+            verb = "Le sacas" if mine.best < rival.best else "Te saca"
+            self.note.setText(f"{verb} {abs(mine.best - rival.best):.3f} s a {rival.driver}. Por sectores (tú − él): "
+                              + " · ".join(parts) + ". Morado: mejor sector de todos.")
+        else:
+            self.note.setText("Morado: el mejor tiempo y los mejores sectores.")

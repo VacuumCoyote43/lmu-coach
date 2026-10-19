@@ -23,6 +23,8 @@ SECTOR_BG = {
 }
 
 W, H = 300, 172
+TEMPS_H = 30          # franja de temperaturas debajo (se puede ocultar)
+TEMP_COL = {"ok": GREEN, "warm": AMBER, "hot": RED, "cold": BLUE, None: "#3a3d46"}
 PAD = 8
 SECTORS_Y = 50
 BODY_Y = 86
@@ -30,10 +32,17 @@ FEEDBACK_Y = 134
 
 
 class Overlay:
-    def __init__(self, cfg: dict, on_close, on_voice=None, voice_menu=None):
+    def __init__(self, cfg: dict, on_close, on_voice=None, voice_menu=None, on_temps=None, on_engineer=None,
+                 on_spotter=None):
         self.cfg = cfg
         self.on_close = on_close
         self.on_voice = on_voice
+        self.on_temps = on_temps
+        self.on_engineer = on_engineer
+        self.on_spotter = on_spotter
+        self.show_temps = bool(cfg.get("temps", True))
+        self.namer = lambda z: f"F{z.idx}"   # nombre de cada frenada (lo pone el coach)
+        self.focus = lambda z: None          # objetivo del plan de entrenamiento para esa frenada
         self.voice_menu = voice_menu    # (opciones(), elegir_voz(nombre), elegir_velocidad(v))
         self.root = tk.Tk()
         self.root.title("LMU Coach")
@@ -41,9 +50,10 @@ class Overlay:
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", cfg.get("opacity", 0.88))
         x, y = cfg.get("x", 60), cfg.get("y", 60)
-        self.root.geometry(f"{W}x{H}+{x}+{y}")
+        h = H + (TEMPS_H if self.show_temps else 0)
+        self.root.geometry(f"{W}x{h}+{x}+{y}")
         self.root.configure(bg=BG)
-        self.c = tk.Canvas(self.root, width=W, height=H, bg=BG, highlightthickness=0)
+        self.c = tk.Canvas(self.root, width=W, height=h, bg=BG, highlightthickness=0)
         self.c.pack()
         self._drag = None
         self.c.bind("<ButtonPress-1>", self._start_drag)
@@ -92,8 +102,31 @@ class Overlay:
                                        command=lambda r=r: pick_rate(r))
                 m.add_cascade(label="Velocidad de la voz", menu=rm)
             m.add_separator()
+        if self.on_engineer:
+            eng = tk.BooleanVar(value=bool(self.cfg.get("engineer", True)))
+            m.add_checkbutton(label="Ingeniero de carrera", variable=eng,
+                              command=lambda: self.on_engineer(eng.get()))
+        if self.on_spotter:
+            spot = tk.BooleanVar(value=bool(self.cfg.get("spotter", True)))
+            m.add_checkbutton(label="Spotter (coches a los lados)", variable=spot,
+                              command=lambda: self.on_spotter(spot.get()))
+        if self.on_temps:
+            temps = tk.BooleanVar(value=self.show_temps)
+            m.add_checkbutton(label="Temperaturas de gomas y frenos", variable=temps,
+                              command=lambda: self.on_temps(temps.get()))
+            m.add_separator()
         m.add_command(label="Salir", command=self.on_close)
         m.tk_popup(e.x_root, e.y_root)
+
+    def move_to(self, x: int, y: int):
+        self.root.geometry(f"+{int(x)}+{int(y)}")
+        self.cfg["x"], self.cfg["y"] = int(x), int(y)
+
+    def set_temps(self, on: bool):
+        self.show_temps = on
+        h = H + (TEMPS_H if on else 0)
+        self.c.configure(height=h)
+        self.root.geometry(f"{W}x{h}")
 
     def toast(self, text, color=FG, seconds=4.0):
         self._toast = (text, color, time.monotonic() + seconds)
@@ -129,12 +162,27 @@ class Overlay:
 
         # Feedback de la última curva
         self._feedback(st.get("feedback"))
+        if self.show_temps:
+            self._temps(st.get("temps"), st.get("damage"))
+        self._spot(st.get("spot"))
         self._draw_toast()
 
     def _header(self, st, sec):
         c = self.c
-        ref = f"V{st['lap']}  ·  Ref {fmt_time(st['ref_time'])}" if st["ref_time"] else f"V{st['lap']}  ·  sin ref"
-        c.create_text(W - PAD, 6, anchor="ne", fill=MUTED, font=("Segoe UI", 8), text=ref)
+        race = st.get("race")
+        if race:
+            # en carrera: posición en tu clase y diferencias (▲ delante, ▼ detrás)
+            parts = [f"P{race['pos']}/{race['of']}"]
+            if race.get("ahead") is not None:
+                parts.append(f"▲{race['ahead']:.1f}")
+            if race.get("behind") is not None:
+                parts.append(f"▼{race['behind']:.1f}")
+            close = race.get("behind") is not None and race["behind"] < 1.0
+            c.create_text(W - PAD, 6, anchor="ne", fill=AMBER if close else FG, font=("Segoe UI Semibold", 8),
+                          text="  ".join(parts) + f"  ·  V{st['lap']}")
+        else:
+            ref = f"V{st['lap']}  ·  Ref {fmt_time(st['ref_time'])}" if st["ref_time"] else f"V{st['lap']}  ·  sin ref"
+            c.create_text(W - PAD, 6, anchor="ne", fill=MUTED, font=("Segoe UI", 8), text=ref)
         fuel = st.get("fuel") or {}
         parts = []
         for key, icon in (("fuel_laps", "⛽"), ("ve_laps", "⚡")):
@@ -248,7 +296,7 @@ class Overlay:
             c.create_text(x0 + w / 2, y0 + h / 2, text="Sin frenada próxima", fill=MUTED, font=("Segoe UI", 8))
             return
         z = cue.zone
-        name = f"F{z.idx}"
+        name = self.namer(z)
         if -40 < cue.dist_to <= 0 and not cue.braking:
             c.create_rectangle(x0, y0, x0 + w, y0 + h, fill=RED, width=0)
             c.create_text(x0 + w / 2, y0 + h / 2, text=f"¡FRENA!  {name}", fill="white", font=("Segoe UI Black", 15))
@@ -262,6 +310,10 @@ class Overlay:
         frac = max(0.0, min(1.0, cue.dist_to / 250.0))
         c.create_rectangle(x0 + 6, y0 + 20, x0 + w - 6, y0 + 24, fill=TRACK, width=0)
         c.create_rectangle(x0 + 6, y0 + 20, x0 + 6 + (w - 12) * frac, y0 + 24, fill=col, width=0)
+        goal = self.focus(z)
+        if goal:
+            c.create_text(x0 + 6, y0 + 34, anchor="w", text=f"🎯 {goal}", fill=AMBER, font=("Segoe UI Semibold", 8))
+            return
         sd = cue.speed_diff
         txt = f"Llegas {sd:+.0f} km/h vs ref"
         if sd > 4 and not cue.braking:
@@ -274,9 +326,47 @@ class Overlay:
             return
         col = GREEN if fb.time_diff <= 0 else RED
         c.create_text(PAD, FEEDBACK_Y, anchor="nw", fill=col, font=("Segoe UI Semibold", 9),
-                      text=f"F{fb.zone.idx}  {fb.time_diff:+.2f} s")
-        c.create_text(PAD + 70, FEEDBACK_Y + 1, anchor="nw", fill=FG, font=("Segoe UI", 8), width=W - PAD * 2 - 70,
+                      text=f"{self.namer(fb.zone)}  {fb.time_diff:+.2f} s")
+        c.create_text(PAD, FEEDBACK_Y + 16, anchor="nw", fill=FG, font=("Segoe UI", 8), width=W - PAD * 2,
                       text=" · ".join(fb.messages))
+
+    def _spot(self, spot):
+        """Barras en los bordes del coach cuando hay un coche a tu lado."""
+        if not spot:
+            return
+        h = H + (TEMPS_H if self.show_temps else 0)
+        if spot.get("left"):
+            self.c.create_rectangle(0, 0, 5, h, fill=AMBER, width=0)
+        if spot.get("right"):
+            self.c.create_rectangle(W - 5, 0, W, h, fill=AMBER, width=0)
+
+    def _temps(self, t, damage=None):
+        """Franja inferior: 4 gomas (DI DD / TI TD) y 4 frenos, coloreados según su estado."""
+        c = self.c
+        y0 = H + 2
+        c.create_line(PAD, y0 - 2, W - PAD, y0 - 2, fill=TRACK)
+        if not t:
+            c.create_text(W / 2, y0 + TEMPS_H / 2 - 2, text="Temperaturas: sin datos todavía", fill=MUTED,
+                          font=("Segoe UI", 8))
+            return
+
+        def block(x, label, vals, states, fmt):
+            c.create_text(x, y0 + 13, anchor="w", text=label, fill=MUTED, font=("Segoe UI Semibold", 7))
+            bw, bh, gap = 30, 11, 2
+            for i, (v, st) in enumerate(zip(vals, states)):
+                bx = x + 30 + (i % 2) * (bw + gap)
+                by = y0 + 2 + (i // 2) * (bh + gap)
+                c.create_rectangle(bx, by, bx + bw, by + bh, fill="#1c1e24", outline=TEMP_COL[st], width=1)
+                c.create_text(bx + bw / 2, by + bh / 2, text=fmt(v),
+                              fill=TEMP_COL[st] if st else FG, font=("Segoe UI Semibold", 7))
+
+        block(PAD, "Gomas", t["tyre"], t["tyre_state"], lambda v: f"{v:.0f}°")
+        block(PAD + 106, "Frenos", t["brake"], t["brake_state"], lambda v: f"{v:.0f}")
+        note, col = (f"ópt. {t['opt']:.0f}°" if t.get("opt") else ""), MUTED
+        if damage and (damage["level"] or damage["detached"] or damage["flat"] or damage["overheating"]):
+            serious = damage["level"] >= 2 or damage["flat"] or damage["detached"]
+            note, col = "⚠ DAÑOS", RED if serious else AMBER
+        c.create_text(W - PAD, y0 + 13, anchor="e", text=note, fill=col, font=("Segoe UI Semibold", 7))
 
     def _draw_toast(self):
         if not self._toast:

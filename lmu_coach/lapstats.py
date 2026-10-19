@@ -32,6 +32,7 @@ class LapStats:
     t_carcass: list = field(default_factory=list)
     brake_max: list = field(default_factory=list)  # °C máximos por rueda
     wear: list = field(default_factory=list)       # % gastado en la vuelta por rueda
+    wear_left: list = field(default_factory=list)  # % de goma que queda al acabar la vuelta
 
 
 def _at(ch, t):
@@ -89,6 +90,7 @@ def lap_stats(sd) -> list[LapStats]:
         w0, w1 = _at(wear, a + 0.2), _at(wear, b - 0.2)
         if w0 is not None and w1 is not None:
             st.wear = [float(x) for x in (w0 - w1)]
+            st.wear_left = [float(x) for x in w1]
         out.append(st)
     return out
 
@@ -250,6 +252,7 @@ class ZoneConsistency:
     time_sd: float           # s
     mean_loss: float         # s respecto a la mejor vuelta
     n: int
+    apex: float = 0.0        # m
 
 
 def consistency(sd) -> tuple[list[ZoneConsistency], float | None, int]:
@@ -278,9 +281,141 @@ def consistency(sd) -> tuple[list[ZoneConsistency], float | None, int]:
                                    statistics.pstdev([r.brake_diff for r in rs]),
                                    statistics.pstdev([r.min_speed_diff for r in rs]),
                                    statistics.pstdev([r.time_diff for r in rs]),
-                                   statistics.mean([r.time_diff for r in rs]), len(rs)))
+                                   statistics.mean([r.time_diff for r in rs]), len(rs), apex=zones[idx].apex))
     lap_sd = statistics.pstdev([l.time for l in valid])
     return out, lap_sd, len(valid)
+
+
+def brake_baseline(infos, max_sessions=6):
+    """Temperaturas de freno habituales con este coche: {'front': (p10, p99), 'rear': (p10, p99)} o None."""
+    fr, rr = [], []
+    for info in sorted(infos, key=lambda i: -i.mtime)[:max_sessions]:
+        try:
+            con = duckdb.connect(info.path, read_only=True)
+            try:
+                row = con.execute('select quantile_cont(greatest(value1, value2), [0.1, 0.99]), '
+                                  'quantile_cont(greatest(value3, value4), [0.1, 0.99]) from "Brakes Temp"').fetchone()
+            finally:
+                con.close()
+        except Exception:
+            continue
+        if row and row[0] and row[1]:
+            fr.append(row[0])
+            rr.append(row[1])
+    if not fr:
+        return None
+    med = lambda xs, k: statistics.median(x[k] for x in xs)
+    return {"front": (med(fr, 0), med(fr, 1)), "rear": (med(rr, 0), med(rr, 1))}
+
+
+# --------------------------------------------------------------------------- ritmo y relevos
+
+FUEL_S_PER_L = 0.025      # cada litro menos hace el coche ~0,025 s/vuelta más rápido (aprox. 0,035 s/kg)
+MISTAKE_S = 1.2           # vuelta «con error»: más lenta que la tendencia de su relevo en al menos esto
+MIN_TREND_LAPS = 8        # vueltas limpias mínimas para hablar de degradación
+
+
+@dataclass
+class RunStint:
+    idx: int
+    laps: list                 # LapStats del relevo (sin vueltas de boxes)
+    clean: list                # las que cuentan para el ritmo
+    mistakes: list             # [(LapStats, segundos perdidos frente a la tendencia)]
+    avg: float | None
+    best: float | None
+    slope: float | None        # s/vuelta (positivo: cada vuelta más lento)
+    slope_fuel: float | None   # descontando lo que ayuda quemar combustible: ≈ degradación de neumáticos
+    first_last: float | None   # media de las 3 últimas − media de las 3 primeras (vueltas limpias)
+    fuel_per_lap: float | None
+    wear_per_lap: list         # %/vuelta por rueda
+    wear_left: list            # % que queda al final del relevo
+    trend: tuple | None        # (a, b) con tiempo ≈ a + b·nº de vuelta
+
+
+def _is_pit(st: LapStats) -> bool:
+    return ("boxes" in st.note or st.refuel or (st.fuel_used is not None and st.fuel_used < -0.5)
+            or any(w < -0.5 for w in st.wear))
+
+
+def _theil_sen(x, y):
+    """Pendiente robusta (mediana de las pendientes entre pares) y ordenada."""
+    sl = [(y[j] - y[i]) / (x[j] - x[i]) for i in range(len(x)) for j in range(i + 1, len(x)) if x[j] != x[i]]
+    if not sl:
+        return None
+    b = statistics.median(sl)
+    a = statistics.median(yi - b * xi for xi, yi in zip(x, y))
+    return a, b
+
+
+def stints(stats: list[LapStats]) -> list[RunStint]:
+    """Parte la sesión en relevos (entre paradas) y calcula ritmo, degradación, errores y desgaste."""
+    groups, cur = [], []
+    for st in stats:
+        if _is_pit(st):
+            if cur:
+                groups.append(cur)
+            cur = []
+        elif st.time > 0:
+            cur.append(st)
+    if cur:
+        groups.append(cur)
+    out = []
+    for gi, laps in enumerate(g for g in groups if len(g) >= 3):
+        times = [l.time for l in laps]
+        med = statistics.median(times)
+        # fuera lo que no es ritmo (trompos, banderas, vueltas a medio gas): más de 5 s sobre la mediana
+        pace = [l for l in laps if l.time < med + 5]
+        trend = _theil_sen([l.num for l in pace], [l.time for l in pace]) if len(pace) >= 3 else None
+        mistakes, clean = [], []
+        for l in pace:
+            exp = trend[0] + trend[1] * l.num if trend else med
+            (mistakes.append((l, l.time - exp)) if l.time - exp > MISTAKE_S else clean.append(l))
+        mistakes += [(l, l.time - med) for l in laps if l not in pace]
+        mistakes.sort(key=lambda m: m[0].num)
+        fuel = [l.fuel_used for l in laps if l.fuel_used and l.fuel_used > 0]
+        fpl = statistics.median(fuel) if fuel else None
+        slope = trend[1] if trend and len(clean) >= MIN_TREND_LAPS else None
+        ct = [l.time for l in clean]
+        wear = [l.wear for l in laps if l.wear and all(0 <= w < 5 for w in l.wear)]
+        out.append(RunStint(
+            idx=gi + 1, laps=laps, clean=clean, mistakes=mistakes,
+            avg=statistics.mean(ct) if ct else None, best=min(ct) if ct else None,
+            slope=slope, slope_fuel=(slope + fpl * FUEL_S_PER_L) if slope is not None and fpl else None,
+            first_last=(statistics.mean(ct[-3:]) - statistics.mean(ct[:3])) if len(ct) >= 6 else None,
+            fuel_per_lap=fpl,
+            wear_per_lap=[statistics.median(w[k] for w in wear) for k in range(4)] if wear else [],
+            wear_left=next((l.wear_left for l in reversed(laps) if l.wear_left), []),
+            trend=trend))
+    return out
+
+
+def stint_summary(sts: list[RunStint]) -> list[str]:
+    """Una frase por relevo para el resumen de la pestaña."""
+    out = []
+    for s in sts:
+        parts = []
+        if s.slope is not None and s.slope_fuel is not None:
+            deg = s.slope_fuel
+            if deg > 0.08:
+                parts.append(f"pierdes ~{deg:.2f} s/vuelta por los neumáticos: cuídalos más "
+                             "(menos deslizamiento a la salida de las curvas)")
+            elif deg > 0.03:
+                parts.append(f"degradación moderada (~{deg:.2f} s/vuelta descontando el combustible)")
+            elif s.slope < -0.05:
+                parts.append(f"vas cada vez más rápido ({s.slope:+.2f} s/vuelta): te cuestan las primeras vueltas")
+            else:
+                parts.append("los neumáticos aguantan bien")
+        if s.mistakes:
+            parts.append(f"{len(s.mistakes)} vuelta(s) con error ({sum(m[1] for m in s.mistakes):.1f} s perdidos)")
+        if s.wear_per_lap:
+            f = (s.wear_per_lap[0] + s.wear_per_lap[1]) / 2
+            r = (s.wear_per_lap[2] + s.wear_per_lap[3]) / 2
+            if max(f, r) > 0 and abs(f - r) / max(f, r) > 0.3:
+                parts.append(f"gastas bastante más las {'delanteras' if f > r else 'traseras'} "
+                             f"({max(f, r):.2f} frente a {min(f, r):.2f} %/vuelta)")
+        if parts:
+            out.append(f"Relevo {s.idx}: " + "; ".join(parts) + ".")
+    return out
 
 
 # --------------------------------------------------------------------------- progreso y vuelta ideal
@@ -326,6 +461,57 @@ def ideal_lap(infos):
     if any(b is None for b in best):
         return None, best_real
     return best, best_real
+
+
+# --------------------------------------------------------------------------- ranking con otros pilotos
+
+@dataclass
+class RankRow:
+    driver: str
+    mine: bool
+    best: float
+    best_car: str
+    best_date: str
+    sectors: list            # mejores S1, S2, S3 (de cualquier vuelta válida)
+    ideal: float | None
+    laps: int                # vueltas válidas
+
+
+def ranking(sessions, track: str, layout: str, car_class: str) -> list[RankRow]:
+    """Tú y los pilotos de las sesiones importadas en ese circuito y clase, del más rápido al más lento."""
+    per = {}
+    for s in sessions:
+        if s.error or s.track != track or s.layout != layout or s.car_class != car_class:
+            continue
+        who = (s.driver or "Importado") if s.imported else "__yo__"
+        r = per.setdefault(who, RankRow(s.driver or "Tú" if not s.imported else (s.driver or "Importado"),
+                                        not s.imported, 0.0, "", "", [0.0, 0.0, 0.0], None, 0))
+        for num, t, ok, s1, s2, s3, _ in s.lap_list:
+            if not ok or t <= 0:
+                continue
+            r.laps += 1
+            if not r.best or t < r.best:
+                r.best, r.best_car, r.best_date = t, s.car, s.recorded
+            for k, v in enumerate((s1, s2, s3)):
+                if v > 0 and (not r.sectors[k] or v < r.sectors[k]):
+                    r.sectors[k] = v
+    rows = [r for r in per.values() if r.best]
+    for r in rows:
+        r.ideal = sum(r.sectors) if all(r.sectors) else None
+    return sorted(rows, key=lambda r: r.best)
+
+
+def ranking_groups(sessions) -> list[tuple[str, str, str, int, bool]]:
+    """(circuito, trazado, clase, nº de pilotos, hay importadas) con vueltas válidas, los compartidos primero."""
+    groups = defaultdict(lambda: [set(), False])
+    for s in sessions:
+        if s.error or not s.best:
+            continue
+        g = groups[(s.track, s.layout, s.car_class)]
+        g[0].add((s.driver or "Importado") if s.imported else "__yo__")
+        g[1] |= s.imported
+    out = [(t, l, c, len(d), imp) for (t, l, c), (d, imp) in groups.items()]
+    return sorted(out, key=lambda g: (-g[3], g[0], g[2]))
 
 
 # --------------------------------------------------------------------------- reglaje

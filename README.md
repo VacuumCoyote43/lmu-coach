@@ -41,6 +41,7 @@ Atajos (usan Python 3.12 instalado para el usuario):
 - **Gráficas por distancia**: delta, velocidad, gas/freno, volante y marcha. Tu vuelta va en azul y la referencia en discontinua. Las frenadas están marcadas como F1, F2…
 - **Trazada**: el mapa del circuito se colorea en verde donde ganas tiempo y en rojo donde lo pierdes.
 - **Dónde pierdes tiempo**: tabla frenada a frenada con el tiempo ganado o perdido, el punto de frenada, la velocidad mínima, cuándo vuelves a gas a fondo y qué cambiar. Haz clic en una fila para hacer zoom en esa curva.
+- **Nombres de las curvas**: las frenadas llevan el nombre real de la curva en los circuitos conocidos (Rettifilo, Copse, S do Senna…). Haz doble clic en una para ponerle tu propio nombre; el coach y la voz también los usan («pierdes dos décimas en Ascari»).
 - **Compartir sesiones**:
   - **⬆ Exportar sesión** guarda la sesión abierta en un archivo `.lmusession`, un zip que ocupa más o menos la mitad que el original.
   - **⬇ Importar sesión** carga un archivo que te hayan pasado. También puedes arrastrarlo a la ventana o hacerle doble clic. Se aceptan `.lmusession`, `.zip` y `.duckdb`.
@@ -52,8 +53,11 @@ Atajos (usan Python 3.12 instalado para el usuario):
   - **🔧 Reglaje**: diferencias entre el reglaje de la sesión y el de tu sesión más rápida, o cualquier otra, con los nombres en español.
   - **🎯 Consistencia**: cuánto varía, entre vueltas, tu punto de frenada, la velocidad en el vértice y el tiempo en cada frenada.
   - **🛞 Neumáticos y frenos**: por vuelta y rueda, presión, temperaturas interior/centro/exterior, temperatura máxima del freno y desgaste, con pistas orientativas (presión, caída).
+  - **📉 Ritmo y relevos**: tiempos vuelta a vuelta por relevo con su tendencia, cuánto pierdes por vuelta por los neumáticos (descontando el combustible), las vueltas con error y el desgaste de cada eje.
   - **🧠 Asistente de reglaje**: detecta subviraje o sobreviraje por curva y fase (entrada, vértice, salida), cuánto trabajan el ABS y el TC, y las temperaturas de ruedas y frenos. Con eso propone cambios de reglaje ordenados por prioridad. También mira qué valores te dieron mejores tiempos en tus otras sesiones. No usa IA: son reglas de ingeniería aplicadas a tu telemetría. ✓ marca lo que se puede cambiar en series de reglaje fijo.
 - **📈 Progreso**: tu mejor vuelta y tu ritmo medio por día, y la **vuelta ideal** con tus mejores sectores de todas las sesiones.
+- **🎯 Plan de entrenamiento**: las 3 curvas donde más tiempo pierdes en una vuelta normal frente a tu mejor vuelta, con qué cambiar en cada una (punto de frenada, velocidad de paso, cuándo acelerar). Con «Activar en el coach», el coach te recuerda el objetivo al llegar a esas curvas, en pantalla y por voz.
+- **🏆 Ranking**: tus tiempos frente a los de las sesiones importadas de otros pilotos, por circuito y clase, con los mejores sectores de cada uno y dónde os sacáis tiempo.
 - **📌 Usar como referencia del coach**: fija la vuelta seleccionada para que el coach la persiga. Con "Quitar", el coach vuelve a usar tu mejor vuelta.
 
 ## Modo coach (overlay)
@@ -73,6 +77,11 @@ Pulsa **▶ Iniciar modo coach** y entra en pista con LMU en **ventana sin borde
   El sector en curso muestra el delta en directo, y en la cabecera aparece la **vuelta ideal** (la suma de tus mejores sectores).
 - **Combustible y energía**: vueltas restantes de cada uno en la cabecera (⛽ / ⚡), en ámbar o rojo cuando quedan pocas.
 - **Avisos por voz** (voz de Windows en español): «frena», cuánto ganas o pierdes en cada frenada, el tiempo de vuelta, si la vuelta se invalida y cuando queda poco combustible. Con clic derecho en el overlay se activan o desactivan, y se elige la voz (por ejemplo Pablo, Laura o Helena, según las que tenga Windows) y la velocidad. Al cambiarlas oyes una frase de prueba.
+- **Temperaturas en directo**: una franja bajo el coach con la temperatura de cada goma (verde si está en la ventana óptima del compuesto, ámbar si se aleja, rojo si se pasa y azul si está fría) y de cada freno, comparada con lo que alcanza ese coche en tus sesiones. Si los frenos de un eje se pasan mucho, te avisa por voz. Se oculta con clic derecho → «Temperaturas de gomas y frenos».
+- **Ingeniero de carrera** (solo en carreras): arriba a la derecha, tu posición en tu clase y las diferencias con el de delante (▲) y el de detrás (▼). Por voz, al empezar cada vuelta, la posición, las diferencias y si recortas o pierdes tiempo con el de delante. También avisa si tienes un coche de tu clase a menos de 1 s, si ganas o pierdes posiciones, si el de delante o el de detrás entra en boxes, si te alcanza un coche de una clase más rápida, y cuando quedan 5 minutos o 1 vuelta. Se desactiva con clic derecho → «Ingeniero de carrera».
+- **Spotter**: avisa por voz cuando tienes un coche al lado («Izquierda», «Derecha», «En medio», «Libre») y marca ese lado del coach con una barra ámbar. Aprende solo qué lado es cuál en las primeras curvas. Se desactiva con clic derecho → «Spotter».
+- **Daños**: avisa de golpes que dañan la carrocería, piezas sueltas, pinchazos, ruedas perdidas y motor sobrecalentado, y muestra «⚠ DAÑOS» en el coach.
+- **Mensajes ordenados**: los avisos esperan su turno con una pausa entre ellos en vez de pisarse; solo «frena», el spotter y los coches que te alcanzan interrumpen. Los cambios de posición se dicen juntos cuando se estabilizan («Ganas dos posiciones. Posición cinco»).
 - **Tiempo de vuelta en grande** durante 6 s al cruzar meta, con la diferencia frente a la referencia. Sale en morado si es tu nueva mejor vuelta y en gris si no es válida.
 - Graba automáticamente cada vuelta válida en `data/laps/`.
 
