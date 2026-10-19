@@ -35,6 +35,7 @@ Atajos (usan Python 3.12 instalado para el usuario):
 ## La app
 
 - **Sesiones**: lee las que LMU graba en `UserData/Telemetry/*.duckdb`. Puedes filtrar por circuito, coche y tipo de sesión. En morado aparece tu récord para cada coche y circuito. Para ver las sesiones nuevas, usa "Buscar sesiones nuevas".
+- **Imagen del coche**: cada sesión muestra la imagen oficial de su decoración (en la lista y en la cabecera), sacada de la propia interfaz de LMU (`Bin/UI.zip`). Si LMU está abierto al usar la app, aprende la lista completa de decoraciones y la guarda, para que también salgan las más nuevas.
 - **Vueltas**: tiempo, sectores (los mejores en morado), diferencia con la mejor y estado (válida, invalidada, boxes).
 - **Comparar con**: la mejor vuelta de la sesión o tu mejor vuelta histórica con ese coche y circuito.
 - **Gráficas por distancia**: delta, velocidad, gas/freno, volante y marcha. Tu vuelta va en azul y la referencia en discontinua. Las frenadas están marcadas como F1, F2…

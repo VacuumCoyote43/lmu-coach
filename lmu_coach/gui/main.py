@@ -3,7 +3,7 @@ import sys
 from collections import OrderedDict
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, QStandardPaths, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QProcess, QSize, QStandardPaths, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -15,7 +15,7 @@ from .. import analysis, lapstats, share
 from ..laps import LapStore, fmt_time
 from ..paths import ASSETS_DIR, IMPORTED_DIR, INDEX_PATH, LAPS_DIR, PROJECT_ROOT, coach_command
 from ..sessions import SessionData, SessionIndex, SessionInfo, find_telemetry_dir
-from . import theme
+from . import car_pix, theme
 from .charts import TelemetryCharts, TrackMap
 from .diagnostics_dialog import DiagnosticsDialog
 from .insights import AssistantTab, ConsistencyTab, FuelTab, ProgressDialog, SetupTab, TyresTab
@@ -166,6 +166,8 @@ class SessionList(QWidget):
         lay.addLayout(row)
         self.table = make_table(["Fecha", "Circuito", "Coche", "Tipo", "Válidas", "Mejor"], stretch_col=2)
         self.table.setSortingEnabled(True)
+        self.table.setIconSize(QSize(72, 26))
+        self.table.verticalHeader().setDefaultSectionSize(30)
         lay.addWidget(self.table, 1)
         self.count = QLabel()
         self.count.setObjectName("subtitle")
@@ -253,8 +255,13 @@ class SessionList(QWidget):
             date.setData(Qt.UserRole, s.path)
             t.setItem(r, 0, date)
             t.setItem(r, 1, item(short_track(s.track)))
-            car = item(s.car)
+            pix = car_pix.pixmap(s.car, "thumb", 26)
+            # con imagen no cabe también el nombre: va en el aviso al pasar el ratón y en la cabecera de la sesión
+            car = sitem("" if pix else s.car, s.car.casefold())
+            car.setData(Qt.UserRole, s.car)
             car.setToolTip(f"{s.car} · {s.car_class}")
+            if pix:
+                car.setIcon(QIcon(pix))
             t.setItem(r, 2, car)
             kind_txt = SESSION_TYPES.get(s.session_type, s.session_type)
             if s.imported:
@@ -327,6 +334,10 @@ class SessionView(QWidget):
         self.subtitle = QLabel()
         self.subtitle.setObjectName("subtitle")
         head = QHBoxLayout()
+        self.car_img = QLabel()
+        self.car_img.setFixedHeight(84)
+        self.car_img.hide()
+        head.addWidget(self.car_img, 0, Qt.AlignVCenter)
         titles = QVBoxLayout()
         titles.addWidget(self.title)
         titles.addWidget(self.subtitle)
@@ -450,6 +461,10 @@ class SessionView(QWidget):
             return
         i = self.sd.info
         self.title.setText(f"{short_track(i.track)}  ·  {i.car}")
+        pix = car_pix.pixmap(i.car, "large", 84)
+        self.car_img.setVisible(pix is not None)
+        if pix:
+            self.car_img.setPixmap(pix)
         best = f"Mejor {fmt_time(i.best)} (V{i.best_lap})" if i.best else "Sin vueltas válidas"
         who = f"📥 Importada · piloto: {i.driver or 'desconocido'}  ·  " if i.imported else ""
         self.subtitle.setText(f"{who}{SESSION_TYPES.get(i.session_type, i.session_type)}  ·  {i.recorded}  ·  "
@@ -906,6 +921,29 @@ class MainWindow(QMainWindow):
         self.worker.progress.connect(lambda i, n: (self.progress.setMaximum(n), self.progress.setValue(i)))
         self.worker.done.connect(self._indexed)
         self.worker.start()
+        # con LMU abierto, aprender su lista completa de decoraciones para poner la imagen de cada coche
+        if not (getattr(self, "car_worker", None) and self.car_worker.isRunning()):
+            self.car_worker = car_pix.GameListWorker()
+            self.car_worker.learned.connect(self._cars_learned)
+            self.car_worker.start()
+
+    def _cars_learned(self):
+        """Poner las imágenes que faltaban sin rehacer la lista (se conserva la selección)."""
+        car_pix.forget_missing()
+        t = self.list.table
+        for r in range(t.rowCount()):
+            it = t.item(r, 2)
+            if it is not None and it.icon().isNull():
+                pix = car_pix.pixmap(it.data(Qt.UserRole), "thumb", 26)
+                if pix:
+                    it.setIcon(QIcon(pix))
+                    it.setText("")
+        info = getattr(self.view, "sd", None)
+        if info is not None and self.view.car_img.isHidden():
+            pix = car_pix.pixmap(info.info.car, "large", 84)
+            if pix:
+                self.view.car_img.setPixmap(pix)
+                self.view.car_img.show()
 
     def _indexed(self, sessions):
         self.progress.hide()
