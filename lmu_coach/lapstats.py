@@ -75,7 +75,7 @@ def lap_stats(sd) -> list[LapStats]:
                 used = float(v0[0] - v1[0])
                 ts, vals = ch
                 m = (ts >= a) & (ts <= b)
-                if m.sum() > 2 and np.diff(vals[m, 0]).max() > 0.5:   # subió: repostaje
+                if (m.sum() > 2 and np.diff(vals[m, 0]).max() > 0.5) or used < -0.5:   # subió: repostaje
                     st.refuel = True
                 setattr(st, attr, used)
         st.pressure = _mean_in(press, a, b)

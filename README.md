@@ -2,7 +2,7 @@
 
 App de escritorio para mejorar tus hotlaps en Le Mans Ultimate: analiza todas tus sesiones y tiene un **modo coach** con overlay en directo.
 
-![captura](captura.png)
+![Sesión abierta: imagen del coche, vueltas, gráficas frente a la mejor vuelta, trazada y dónde pierdes tiempo en cada frenada](docs/img/app.png)
 
 ## Instalar
 
@@ -55,12 +55,21 @@ Atajos (usan Python 3.12 instalado para el usuario):
   - **🛞 Neumáticos y frenos**: por vuelta y rueda, presión, temperaturas interior/centro/exterior, temperatura máxima del freno y desgaste, con pistas orientativas (presión, caída).
   - **📉 Ritmo y relevos**: tiempos vuelta a vuelta por relevo con su tendencia, cuánto pierdes por vuelta por los neumáticos (descontando el combustible), las vueltas con error y el desgaste de cada eje.
   - **🧠 Asistente de reglaje**: detecta subviraje o sobreviraje por curva y fase (entrada, vértice, salida), cuánto trabajan el ABS y el TC, y las temperaturas de ruedas y frenos. Con eso propone cambios de reglaje ordenados por prioridad. También mira qué valores te dieron mejores tiempos en tus otras sesiones. No usa IA: son reglas de ingeniería aplicadas a tu telemetría. ✓ marca lo que se puede cambiar en series de reglaje fijo.
+
+| Ritmo y relevos | Asistente de reglaje | Combustible y estrategia |
+|---|---|---|
+| ![Ritmo y relevos](docs/img/ritmo.png) | ![Asistente de reglaje](docs/img/asistente.png) | ![Combustible y estrategia](docs/img/combustible.png) |
+
 - **📈 Progreso**: tu mejor vuelta y tu ritmo medio por día, y la **vuelta ideal** con tus mejores sectores de todas las sesiones.
 - **🎯 Plan de entrenamiento**: las 3 curvas donde más tiempo pierdes en una vuelta normal frente a tu mejor vuelta, con qué cambiar en cada una (punto de frenada, velocidad de paso, cuándo acelerar). Con «Activar en el coach», el coach te recuerda el objetivo al llegar a esas curvas, en pantalla y por voz.
 - **🏆 Ranking**: tus tiempos frente a los de las sesiones importadas de otros pilotos, por circuito y clase, con los mejores sectores de cada uno y dónde os sacáis tiempo.
 - **📌 Usar como referencia del coach**: fija la vuelta seleccionada para que el coach la persiga. Con "Quitar", el coach vuelve a usar tu mejor vuelta.
 
+![Plan de entrenamiento](docs/img/plan.png)
+
 ## Modo coach (overlay)
+
+![El coach en carrera: posición y diferencias, sectores, aviso de frenada con el objetivo del plan, coche al lado (barra izquierda) y temperaturas; a la derecha, el tiempo al cruzar meta](docs/img/coach.png)
 
 Pulsa **▶ Iniciar modo coach** y entra en pista con LMU en **ventana sin bordes**.
 

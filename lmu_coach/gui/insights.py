@@ -136,8 +136,10 @@ class FuelTab(QWidget):
             muted = None if s.valid else theme.MUTED
             t.setItem(r, 0, _it(s.num, Qt.AlignCenter, muted))
             t.setItem(r, 1, _it(fmt_time(s.time), RIGHT, muted))
-            t.setItem(r, 2, _it(_fmt(s.fuel_used, 2, " L"), RIGHT, muted))
-            t.setItem(r, 3, _it(_fmt(s.ve_used, 2, " %"), RIGHT, muted))
+            # en la vuelta del repostaje el nivel sube: se muestra lo cargado («+60.0 L»), no un consumo negativo
+            fmt_use = lambda v, unit: (f"+{-v:.1f}{unit}" if v is not None and v < 0 else _fmt(v, 2, unit))
+            t.setItem(r, 2, _it(fmt_use(s.fuel_used, " L"), RIGHT, theme.AMBER if (s.fuel_used or 0) < 0 else muted))
+            t.setItem(r, 3, _it(fmt_use(s.ve_used, " %"), RIGHT, theme.AMBER if (s.ve_used or 0) < 0 else muted))
             note = "repostaje" if s.refuel else ("boxes" if "boxes" in s.note else ("" if s.valid else s.note))
             t.setItem(r, 4, _it(note, color=theme.AMBER if s.refuel else theme.MUTED))
         med = lambda xs: float(np.median(xs)) if xs else None
