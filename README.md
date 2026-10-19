@@ -21,7 +21,7 @@ Solo hace falta hacerlo una vez, dentro del juego:
 2. **Pon el juego en «Ventana sin bordes» (Borderless).** En pantalla completa, el coach no se puede ver encima del juego.
 3. **Sal a pista.** Los datos en directo del coach solo llegan con el coche en pista, no en el monitor ni en el garaje. Las sesiones aparecen en la app al terminar de rodar: pulsa «⟳ Buscar sesiones nuevas».
 
-No hay que instalar plugins ni tocar archivos del juego: la app lee la telemetría que LMU ya graba y su memoria compartida (`LMU_Data`).
+No hay que instalar plugins ni tocar archivos del juego: la app lee la telemetría que LMU ya graba (y guarda una copia propia) y su memoria compartida (`LMU_Data`).
 
 Si algo no funciona, pulsa **🩺 Diagnóstico** en la app. Comprueba que encuentra la carpeta de LMU (si no, deja elegirla a mano), que hay sesiones grabadas, que la grabación de telemetría está activada y que llegan datos en directo.
 
@@ -49,6 +49,7 @@ Atajos (usan Python 3.12 instalado para el usuario):
 ## La app
 
 - **Sesiones**: lee las que LMU graba en `UserData/Telemetry/*.duckdb`. Puedes filtrar por circuito, coche y tipo de sesión. En morado aparece tu récord para cada coche y circuito. Para ver las sesiones nuevas, usa "Buscar sesiones nuevas".
+- **Copia propia de tus sesiones** (💾 Copia): al buscar sesiones nuevas, la app copia las que LMU ha terminado de grabar a `Documentos\LMU Coach\Sesiones` (se puede cambiar) y lee de ahí. Aunque LMU borre sus archivos, reinstales el juego o cambies de PC (llevándote esa carpeta), no pierdes nada. La carpeta de LMU nunca se modifica.
 - **Imagen del coche**: cada sesión muestra la imagen oficial de su decoración (en la lista y en la cabecera), sacada de la propia interfaz de LMU (`Bin/UI.zip`). Si LMU está abierto al usar la app, aprende la lista completa de decoraciones y la guarda, para que también salgan las más nuevas.
 - **Vueltas**: tiempo, sectores (los mejores en morado), diferencia con la mejor y estado (válida, invalidada, boxes).
 - **Comparar con**: la mejor vuelta de la sesión o tu mejor vuelta histórica con ese coche y circuito.

@@ -202,9 +202,15 @@ class SessionIndex:
 
     CACHE_VERSION = 3
 
-    def __init__(self, telemetry_dir: Path, cache_path: Path, imported_dir: Path | None = None):
+    def __init__(self, telemetry_dir: Path, cache_path: Path, imported_dir: Path | None = None,
+                 archive_dir: Path | None = None):
         self.dir = Path(telemetry_dir)
         self.imported_dir = Path(imported_dir) if imported_dir else None
+        if archive_dir is None:
+            from .archive import archive_dir as _default
+            archive_dir = _default()
+        self.archive_dir = Path(archive_dir)
+        self.last_sync = None     # resultado de la última copia (archive.sync)
         self.cache_path = Path(cache_path)
         self.sessions: list[SessionInfo] = []
         self._load_cache()
@@ -223,10 +229,24 @@ class SessionIndex:
         self.cache_path.write_text(json.dumps({"version": self.CACHE_VERSION,
                                                "sessions": [asdict(s) for s in self.sessions]}), encoding="utf-8")
 
-    def refresh(self, progress=None) -> list[SessionInfo]:
-        """Relee solo los archivos nuevos o modificados. progress(hechos, total)."""
+    def refresh(self, progress=None, stage=None, sync=True) -> list[SessionInfo]:
+        """Copia a la carpeta propia lo nuevo de LMU y relee solo los archivos nuevos o modificados.
+        progress(hechos, total); stage(texto) al cambiar de fase."""
+        if sync:
+            from . import archive
+            if stage:
+                stage("Copiando sesiones nuevas")
+            try:
+                self.last_sync = archive.sync(self.dir, self.archive_dir, progress)
+            except Exception as e:      # la copia nunca debe impedir ver las sesiones
+                self.last_sync = {"copied": 0, "bytes": 0, "error": str(e), "dir": str(self.archive_dir)}
+        if stage:
+            stage("Leyendo sesiones")
         cached = {s.path: s for s in self.sessions}
-        files = [(f, False) for f in self.dir.glob("*.duckdb")]
+        # primero la copia propia; de LMU solo lo que aún no está copiado (p. ej. la sesión en curso)
+        own = list(self.archive_dir.glob("*.duckdb")) if self.archive_dir.is_dir() else []
+        names = {f.name for f in own}
+        files = [(f, False) for f in own] + [(f, False) for f in self.dir.glob("*.duckdb") if f.name not in names]
         if self.imported_dir and self.imported_dir.is_dir():
             files += [(f, True) for f in self.imported_dir.glob("*.duckdb")]
         files.sort(key=lambda x: x[0].stat().st_mtime, reverse=True)

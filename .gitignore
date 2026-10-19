@@ -15,3 +15,6 @@ venv/
 
 # Sesiones exportadas
 *.lmusession
+
+# Credenciales de Google descargadas (no deben subirse nunca)
+client_secret*.json

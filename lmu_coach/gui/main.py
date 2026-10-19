@@ -117,6 +117,7 @@ def section(text):
 
 class IndexWorker(QThread):
     progress = Signal(int, int)
+    stage = Signal(str)
     done = Signal(list)
 
     def __init__(self, index: SessionIndex):
@@ -124,7 +125,7 @@ class IndexWorker(QThread):
         self.index = index
 
     def run(self):
-        self.done.emit(self.index.refresh(lambda i, n: self.progress.emit(i, n)))
+        self.done.emit(self.index.refresh(lambda i, n: self.progress.emit(i, n), lambda s: self.stage.emit(s)))
 
 
 # --------------------------------------------------------------------------- lista de sesiones
@@ -909,6 +910,10 @@ class MainWindow(QMainWindow):
         self.import_btn.setToolTip("Abre un .lmusession que te haya pasado otro piloto (también puedes arrastrarlo aquí)")
         self.import_btn.clicked.connect(self._choose_import)
         tb.addWidget(self.import_btn)
+        self.backup_btn = QPushButton("💾  Copia")
+        self.backup_btn.setToolTip("Copia propia de tus sesiones (no se pierden aunque LMU las borre)")
+        self.backup_btn.clicked.connect(self._show_backup)
+        tb.addWidget(self.backup_btn)
         self.diag_btn = QPushButton("🩺  Diagnóstico")
         self.diag_btn.setToolTip("Comprueba por qué no se cargan datos de LMU y permite elegir la carpeta del juego")
         self.diag_btn.clicked.connect(lambda: self.show_diagnostics())
@@ -965,6 +970,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Leyendo sesiones de {self.index.dir}…")
         self.worker = IndexWorker(self.index)
         self.worker.progress.connect(lambda i, n: (self.progress.setMaximum(n), self.progress.setValue(i)))
+        self.worker.stage.connect(lambda s: self.statusBar().showMessage(f"{s}…"))
         self.worker.done.connect(self._indexed)
         self.worker.start()
         # con LMU abierto, aprender su lista completa de decoraciones para poner la imagen de cada coche
@@ -997,6 +1003,12 @@ class MainWindow(QMainWindow):
         self.list.set_sessions(sessions)
         errors = sum(1 for s in sessions if s.error)
         msg = f"{len(sessions)} sesiones"
+        ls = self.index.last_sync
+        if ls and ls.get("copied"):
+            msg += f"  ·  {ls['copied']} copiadas a tu carpeta"
+        if ls and ls.get("error"):
+            msg += f"  ·  ⚠ copia: {ls['error']}"
+
         if errors:
             msg += f"  ·  {errors} no se pudieron leer (¿LMU las está grabando ahora?)"
         self.statusBar().showMessage(msg, 8000)
@@ -1025,6 +1037,17 @@ class MainWindow(QMainWindow):
             UpdateDialog(self, self._release).exec()
 
     # --- diagnóstico ------------------------------------------------------
+
+    def _show_backup(self):
+        from .backup_dialog import BackupDialog
+        dlg = BackupDialog(self, self.index.last_sync)
+        dlg.archive_changed.connect(self._archive_changed)
+        dlg.exec()
+
+    def _archive_changed(self):
+        from .. import archive
+        self.index.archive_dir = archive.archive_dir()
+        self.refresh()
 
     def show_diagnostics(self, headline: str = ""):
         dlg = DiagnosticsDialog(self, headline)

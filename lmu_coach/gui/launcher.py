@@ -77,7 +77,9 @@ def main():
         show_window()
     else:
         splash.set_status("Buscando sesiones de LMU…")
-        worker.progress.connect(lambda i, n: splash.set_status(f"Leyendo sesiones… {i}/{n}", i / n if n else None))
+        what = {"text": "Leyendo sesiones"}
+        worker.stage.connect(lambda s: what.update(text=s))
+        worker.progress.connect(lambda i, n: splash.set_status(f"{what['text']}… {i}/{n}", i / n if n else None))
         # Se comprueba el hilo en vez de esperar a su señal: puede haber terminado ya
         poll = QTimer(splash, interval=100, timeout=lambda: worker.isFinished() and show_window())
         poll.start()
