@@ -13,6 +13,20 @@ Los datos (vueltas grabadas, referencias fijadas, configuración) se guardan en 
 
 Para regenerar el instalador tras cambiar el código, ejecuta `build.bat` (requiere Python 3.12, PyInstaller e Inno Setup 6).
 
+## Configurar Le Mans Ultimate
+
+Solo hace falta hacerlo una vez, dentro del juego:
+
+1. **Activa la grabación de telemetría.** En los ajustes de LMU, activa **«Automatically Record Telemetry»** (o usa el atajo de teclado **«Telemetry Recording»** cuando estés en pista). Sin esto, LMU no guarda las sesiones en `UserData\Telemetry` y la app no tiene nada que analizar. El modo coach sí funciona sin ello.
+2. **Pon el juego en «Ventana sin bordes» (Borderless).** En pantalla completa, el coach no se puede ver encima del juego.
+3. **Sal a pista.** Los datos en directo del coach solo llegan con el coche en pista, no en el monitor ni en el garaje. Las sesiones aparecen en la app al terminar de rodar: pulsa «⟳ Buscar sesiones nuevas».
+
+No hay que instalar plugins ni tocar archivos del juego: la app lee la telemetría que LMU ya graba y su memoria compartida (`LMU_Data`).
+
+Si algo no funciona, pulsa **🩺 Diagnóstico** en la app. Comprueba que encuentra la carpeta de LMU (si no, deja elegirla a mano), que hay sesiones grabadas, que la grabación de telemetría está activada y que llegan datos en directo.
+
+Si usas varios monitores, el coach se coloca solo en la pantalla del juego. Puedes arrastrarlo a donde quieras y recuerda la posición.
+
 ## Desarrollo
 
 Para ejecutarlo desde el código, en Windows con Python 3.12:
