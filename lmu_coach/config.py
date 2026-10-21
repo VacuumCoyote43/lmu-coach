@@ -25,7 +25,7 @@ DEFAULT_CONFIG = {
     "eng_pit_loss": 30.0,    # s que pierdes en una parada (entrar, repostar y salir), para saber dónde vuelves
     # coach
     "delta_every": 0,        # decir el delta con tu referencia cada N sectores (0 = nunca)
-    "practice_corner": None,  # modo práctica: solo se habla de esta frenada (nº de curva)
+    "practice_corner": None,  # modo práctica: {"track", "car", "apex", "name"}; solo se habla de esa curva
     "msgs": {},              # {clave: True/False} para cada mensaje del catálogo
 }
 

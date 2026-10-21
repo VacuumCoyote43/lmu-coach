@@ -30,6 +30,7 @@ class SettingsDialog(QDialog):
         self.resize(820, 680)
         self.cfg = C.load_config()
         self.msg_boxes: dict[str, QCheckBox] = {}
+        self._dirty, self._dirty_msgs = {}, {}
         self.speaker = Speaker(True, self.cfg.get("voice_name"), float(self.cfg.get("voice_rate", 1.2)))
         self.speaker.start()
         self._save_timer = QTimer(self, singleShot=True, interval=300, timeout=self._save)
@@ -69,19 +70,23 @@ class SettingsDialog(QDialog):
 
     def _set(self, key, value):
         self.cfg[key] = value
+        self._dirty[key] = value
         self._save_timer.start()
 
     def _set_msg(self, key, on):
         self.cfg.setdefault("msgs", {})[key] = bool(on)
+        self._dirty_msgs[key] = bool(on)
         self._save_timer.start()
 
     def _save(self):
-        """Guarda solo lo que se cambia aquí: la posición del overlay la lleva el coach."""
+        """Guarda solo lo que se ha cambiado aquí, sobre lo último del archivo (el coach también lo escribe)."""
+        if not self._dirty and not self._dirty_msgs:
+            return
         cur = C.load_config()
-        for k, v in self.cfg.items():
-            if k not in ("x", "y"):
-                cur[k] = v
+        cur.update(self._dirty)
+        cur.setdefault("msgs", {}).update(self._dirty_msgs)
         C.save_config(cur)
+        self._dirty, self._dirty_msgs = {}, {}
 
     def done(self, r):
         if self._save_timer.isActive():
@@ -271,7 +276,12 @@ class SettingsDialog(QDialog):
                        "«Delta con tu referencia» arriba."))
         practice = self.cfg.get("practice_corner")
         pr = QHBoxLayout()
-        lab = QLabel(f"Modo práctica: solo la curva {practice}" if practice else "Modo práctica: desactivado")
+        if isinstance(practice, dict):
+            from .common import short_track
+            txt = f"Modo práctica: {practice.get('name')} · {short_track(practice.get('track', ''))}"
+        else:
+            txt = "Modo práctica: desactivado"
+        lab = QLabel(txt)
         pr.addWidget(lab, 1)
         off = QPushButton("Quitar")
         off.setEnabled(bool(practice))

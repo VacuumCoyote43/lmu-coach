@@ -223,6 +223,34 @@ class PitPlanTest(unittest.TestCase):
         self.assertIsNone(pitplan.remaining_laps(None, None, 100, 0))
 
 
+class ChangelogTest(unittest.TestCase):
+    def test_news_since_installed_version(self):
+        from lmu_coach import changelog
+        from lmu_coach.version import __version__
+        self.assertEqual([v for v, _ in changelog.since("1.13.0", "1.15.0")], ["1.15.0", "1.14.0"])
+        self.assertEqual(changelog.since("1.15.0", "1.15.0"), [])
+        self.assertIn(__version__, changelog.CHANGES)        # cada versión publicada cuenta sus novedades
+
+
+class CornerTipTest(unittest.TestCase):
+    def fb(self, t=0.4, brake=0.0, vmin=0.0, thr=0.0):
+        from types import SimpleNamespace
+        from lmu_coach.coach import Feedback
+        return Feedback(SimpleNamespace(idx=3), t, brake, vmin, thr, [], 0)
+
+    def test_main_cause_is_spoken(self):
+        from lmu_coach.coach import spoken_tip
+        self.assertEqual(spoken_tip(self.fb(brake=-41)), "frenas cuarenta y un metros antes")
+        self.assertEqual(spoken_tip(self.fb(vmin=-21)), "veintiún kilómetros por hora menos en el vértice")
+        self.assertEqual(spoken_tip(self.fb(brake=-13, thr=60)), "aceleras sesenta metros tarde")   # pesa más
+        self.assertEqual(spoken_tip(self.fb(brake=20, vmin=-8)), "frenas tarde y te pasas en el vértice")
+
+    def test_silent_when_nothing_lost_or_no_clear_cause(self):
+        from lmu_coach.coach import spoken_tip
+        self.assertIsNone(spoken_tip(self.fb(t=-0.3, brake=-40)))
+        self.assertIsNone(spoken_tip(self.fb(t=0.4)))
+
+
 class SpotterTest(unittest.TestCase):
     def drive_circle(self, mirror):
         """Giro a la derecha en un círculo, con un rival por fuera y otro por dentro; el mundo puede ir espejado."""

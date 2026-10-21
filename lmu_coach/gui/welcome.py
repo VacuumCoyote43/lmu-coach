@@ -20,8 +20,10 @@ def needs_welcome() -> bool:
 
 
 def mark_done():
+    from ..version import __version__
     s = load_settings()
     s["welcome_done"] = True
+    s.setdefault("seen_version", __version__)     # sin «novedades» justo después de la bienvenida
     save_settings(s)
 
 

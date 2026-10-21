@@ -257,3 +257,32 @@ def advice(fb: Feedback, no_brake: bool) -> list[str]:
     if not msgs:
         msgs.append("como la referencia")
     return msgs
+
+
+def spoken_tip(fb: Feedback, no_brake: bool = False) -> str | None:
+    """La causa principal de lo que has perdido en una frenada, dicha en una frase corta («frenas quince metros
+    antes»). None si no has perdido nada apreciable o no hay una causa clara."""
+    from .speech import number_es
+
+    def n(x):
+        """Número delante de «metros» o «kilómetros»: «veintiún», «cuarenta y un»."""
+        x = int(round(abs(x)))
+        w = number_es(x) if x < 100 else str(x)
+        return "veintiún" if w == "veintiuno" else w[:-1] if w.endswith(" uno") or w == "uno" else w
+
+    if fb.time_diff < 0.1:
+        return None
+    if no_brake:
+        return "no frenas donde frena tu referencia"
+    causes = []      # (peso, frase): la que más explica la pérdida
+    if fb.brake_diff < -12:
+        causes.append((abs(fb.brake_diff) / 12, f"frenas {n(fb.brake_diff)} metros antes"))
+    if fb.min_speed_diff < -3:
+        causes.append((abs(fb.min_speed_diff) / 3, f"{n(fb.min_speed_diff)} kilómetros por hora menos en el vértice"))
+    if fb.throttle_diff > 15:
+        causes.append((fb.throttle_diff / 15, f"aceleras {n(fb.throttle_diff)} metros tarde"))
+    if fb.brake_diff > 12 and fb.min_speed_diff < -3:
+        causes.append((99, "frenas tarde y te pasas en el vértice"))
+    if not causes:
+        return None
+    return max(causes)[1]

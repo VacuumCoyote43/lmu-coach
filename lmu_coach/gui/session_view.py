@@ -68,6 +68,10 @@ class SessionView(QWidget):
         self.plan_btn.clicked.connect(self._show_plan)
         head.addWidget(self.plan_btn, 0, Qt.AlignTop)
         head.addWidget(self.progress_btn, 0, Qt.AlignTop)
+        self.image_btn = QPushButton("📷  Imagen")
+        self.image_btn.setToolTip("Guarda una imagen de lo que ves (y la copia al portapapeles) para compartirla")
+        self.image_btn.clicked.connect(self._save_image)
+        head.addWidget(self.image_btn, 0, Qt.AlignTop)
         head.addWidget(self.export_btn, 0, Qt.AlignTop)
         head.addWidget(self.remove_btn, 0, Qt.AlignTop)
         lay.addLayout(head)
@@ -162,6 +166,8 @@ class SessionView(QWidget):
         self.laps.customContextMenuRequested.connect(self._laps_menu)
         self.zones.itemSelectionChanged.connect(self._zone_selected)
         self.zones.cellDoubleClicked.connect(self._rename_zone)
+        self.zones.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.zones.customContextMenuRequested.connect(self._zones_menu)
         self.charts.cursor_moved.connect(self.map.set_cursor)
         self.replay.position_changed.connect(self._replay_moved)
         self.tabs.currentChanged.connect(lambda _i: self._page_changed())
@@ -425,6 +431,36 @@ class SessionView(QWidget):
             corners.reset_name(i.track, i.layout, z.apex)
         self._fill_zones()
 
+    def _zones_menu(self, pos):
+        """Clic derecho en una frenada: practicarla en el coach (solo se habla de esa curva)."""
+        it = self.zones.itemAt(pos)
+        if it is None or not self.sd:
+            return
+        from .. import config as C
+        r = self.zones.item(it.row(), 0).data(Qt.UserRole)
+        z = self.zone_results[r].zone
+        i = self.sd.info
+        cfg = C.load_config()
+        cur = cfg.get("practice_corner")
+        m = QMenu(self)
+        practice = m.addAction(f"🎯  Practicar {corners.label(z, i.track, i.layout, with_num=False)} en el coach")
+        practice.setToolTip("En pista, el coach solo te habla de esta curva: cada pasada, lo que ganas o pierdes y por qué")
+        stop = m.addAction("Quitar el modo práctica") if cur else None
+        rename = m.addAction("✏  Ponerle nombre…")
+        chosen = m.exec(self.zones.viewport().mapToGlobal(pos))
+        if chosen is practice:
+            cfg["practice_corner"] = {"track": i.track, "car": i.car, "apex": round(z.apex, 1),
+                                      "name": corners.label(z, i.track, i.layout, with_num=False)}
+            C.save_config(cfg)
+            self.status.emit(f"Modo práctica: {cfg['practice_corner']['name']}. El coach solo hablará de esa curva "
+                             "(quítalo con clic derecho o en ⚙ Ajustes › Coach)")
+        elif stop is not None and chosen is stop:
+            cfg["practice_corner"] = None
+            C.save_config(cfg)
+            self.status.emit("Modo práctica quitado")
+        elif chosen is rename:
+            self._rename_zone(it.row(), 0)
+
     def _fill_zones(self):
         t = self.zones
         res = self.zone_results
@@ -519,6 +555,23 @@ class SessionView(QWidget):
         QMessageBox.information(self, "Sesión exportada",
                                 f"Guardada en:\n{out}\n\n({mb:.1f} MB) Pásale este archivo a otro piloto: "
                                 "lo abre con «Importar sesión» en LMU Coach.")
+
+    def _save_image(self):
+        """Imagen de la vista tal como está (vuelta, comparación y pestaña abiertas); también al portapapeles."""
+        if not self.sd:
+            return
+        i = self.sd.info
+        pix = self.grab()
+        QApplication.clipboard().setPixmap(pix)
+        pics = QStandardPaths.writableLocation(QStandardPaths.PicturesLocation) or str(Path.home())
+        name = f"{short_track(i.track)} {i.recorded[:16].replace(':', '.')} {i.car.split(':')[0]}.png"
+        name = "".join(c for c in name if c not in r'\/*?"<>|')
+        path, _ = QFileDialog.getSaveFileName(self, "Guardar imagen", str(Path(pics) / name), "Imagen PNG (*.png)")
+        if path:
+            pix.save(path, "PNG")
+            self.status.emit(f"Imagen guardada en {path} (también está en el portapapeles)")
+        else:
+            self.status.emit("Imagen copiada al portapapeles: pégala en Discord o WhatsApp")
 
     def _remove_imported(self):
         if not self.sd or not self.sd.info.imported:

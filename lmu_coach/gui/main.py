@@ -201,6 +201,8 @@ class MainWindow(QMainWindow):
             self._diag_auto_shown = True
             self.empty.setText("No hay sesiones de LMU todavía.\nPulsa «🩺 Diagnóstico» para ver qué falta.")
             QTimer.singleShot(0, lambda: self.show_diagnostics("No encuentro sesiones de Le Mans Ultimate"))
+        else:
+            QTimer.singleShot(300, self._show_whats_new)
 
     # --- actualizaciones -------------------------------------------------
 
@@ -232,6 +234,30 @@ class MainWindow(QMainWindow):
         if os.environ.get("LMU_COACH_NO_WELCOME") or getattr(self, "_welcome_shown", False):
             return False
         return needs_welcome()
+
+    def _show_whats_new(self):
+        """Después de actualizar, una vez: qué hay de nuevo."""
+        from .. import changelog
+        from ..paths import load_settings, save_settings
+        from ..version import __version__
+        if os.environ.get("LMU_COACH_NO_WELCOME") or getattr(self, "_news_shown", False):
+            return
+        self._news_shown = True
+        st = load_settings()
+        seen = st.get("seen_version")
+        if seen == __version__:
+            return
+        st["seen_version"] = __version__
+        save_settings(st)
+        news = changelog.since(seen, __version__)
+        if not seen or not news:        # instalación nueva: el asistente ya lo cuenta
+            return
+        html = "".join(f"<h3>{v}</h3><ul>" + "".join(f"<li>{x}</li>" for x in items) + "</ul>" for v, items in news)
+        box = QMessageBox(self)
+        box.setWindowTitle("Novedades de LMU Coach")
+        box.setTextFormat(Qt.RichText)
+        box.setText(f"<h2>Novedades de la versión {__version__}</h2>{html}")
+        box.exec()
 
     def show_welcome(self):
         from .welcome import WelcomeWizard

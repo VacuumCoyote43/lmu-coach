@@ -6,7 +6,7 @@ import time
 from . import corners, goals, pitplan, racelog, training
 from .engineer import Engineer
 from .spotter import DamageWatch, Spotter
-from .coach import LiveCoach
+from .coach import LiveCoach, spoken_tip
 from .laps import LapRecorder, LapStore, Reference, fmt_time, save_async
 from .speech import RATES, Speaker, VoiceQueue, gap_es, lap_time_es
 from .overlay import AMBER, MUTED, Overlay
@@ -95,6 +95,10 @@ class App:
         self._race_saved = False
         self._spoken_corner = None
         self._corner_ctx = None
+        self._practice = None         # nº de la frenada del modo práctica (con esta referencia)
+        self._practice_best = None
+        self._sector_seen = (None, 0)  # (vuelta, sector) para decir el delta al cambiar de sector
+        self._sectors_count = 0
         self.plan = []
         self._spoken = set()          # avisos ya dichos en esta vuelta (frenadas, invalidación…)
         self._last_fb = None
@@ -141,7 +145,24 @@ class App:
         self.cfg.clear()
         self.cfg.update(new)
         self._apply_config()
+        self._resolve_practice()
         self.overlay.toast("Ajustes actualizados", MUTED, 2)
+
+    def _resolve_practice(self):
+        """Modo práctica (elegido en la app): la frenada de tu referencia más cercana a la curva elegida."""
+        old = self._practice
+        self._practice = None
+        p = self.cfg.get("practice_corner")
+        ref = self.coach.ref
+        if isinstance(p, dict) and ref and self.ref_key and p.get("track") == self.ref_key[0] \
+                and p.get("car") == self.ref_key[1]:
+            z = min(ref.zones, key=lambda z: abs(z.apex - float(p.get("apex", 0))), default=None)
+            if z is not None and abs(z.apex - float(p.get("apex", 0))) < 150:
+                self._practice = z.idx
+        if self._practice != old:
+            self._practice_best = None
+            if self._practice is not None:
+                self.overlay.toast(f"Modo práctica: {p.get('name') or 'curva ' + str(self._practice)}", "#ffb020", 6)
 
     def _save_config(self):
         save_config(self.cfg)
@@ -282,6 +303,7 @@ class App:
         self._spoken_corner = lambda z: corners.spoken(z, track, layout)
         self._corner_ctx = (track, layout)
         self.goal = None if self.demo else goals.get(track, self.ref_key[1] if self.ref_key else lap.car, layout)
+        self._resolve_practice()
         self.ref_time = lap.lap_time
 
     def _on_lap(self, lap, lap_time, valid, reason):
@@ -586,6 +608,9 @@ class App:
         if not self.speaker.enabled:
             return
         # objetivo del plan de entrenamiento, unos 4 s antes de la curva
+        practice = self._practice
+        if practice is not None and cue and cue.zone.idx != practice:
+            cue = None                    # modo práctica: solo se habla de esa curva
         if cue and not cue.braking and self.plan and 0 < cue.dist_to <= max(s.speed / 3.6 * 4.0, 120):
             f = training.focus_for(self.plan, cue.zone)
             key = ("plan", cue.zone.idx)
@@ -604,14 +629,56 @@ class App:
         fb = self.coach.last_feedback
         if fb is not None and fb is not self._last_fb:
             self._last_fb = fb
-            if abs(fb.time_diff) >= 0.15:
-                verb = "pierdes" if fb.time_diff > 0 else "ganas"
-                where = self._spoken_corner(fb.zone) if self._spoken_corner else f"en la {fb.zone.idx}"
-                self._say("corner", f"{verb} {gap_es(fb.time_diff)} {where}", kind="corner", prio=1, ttl=4)
+            self._corner_feedback(fb, practice)
+        if practice is None:
+            self._sector_delta()
         reason = self.recorder.invalid_reason or ""
         if self.recorder.started_clean and "límites" in reason and "invalid" not in self._spoken:
             self._spoken.add("invalid")
             self._say("invalid", "vuelta invalidada", kind="invalid", prio=2, ttl=5)
+
+    def _corner_feedback(self, fb, practice):
+        """Lo ganado o perdido en la frenada que acabas de pasar y, si pierdes, por qué."""
+        if practice is not None and fb.zone.idx != practice:
+            return
+        where = self._spoken_corner(fb.zone) if self._spoken_corner else f"en la {fb.zone.idx}"
+        no_brake = bool(fb.messages) and fb.messages[0].startswith("sin frenar")
+        tip = spoken_tip(fb, no_brake) if msg_on(self.cfg, "corner_tip") else None
+        parts, best = [], False
+        if practice is not None:
+            # cada pasada cuenta: también lo pequeño, y si mejoras tu mejor pasada
+            best = self._practice_best is not None and fb.time_diff < self._practice_best
+            if self._practice_best is None or best:
+                self._practice_best = fb.time_diff
+            verb = "pierdes" if fb.time_diff > 0.04 else "ganas" if fb.time_diff < -0.04 else ""
+            parts.append(f"{verb} {gap_es(fb.time_diff)}" if verb else "igual que la referencia")
+        elif abs(fb.time_diff) >= 0.15 and msg_on(self.cfg, "corner"):
+            verb = "pierdes" if fb.time_diff > 0 else "ganas"
+            parts.append(f"{verb} {gap_es(fb.time_diff)} {where}")
+        if tip and (parts or fb.time_diff >= 0.15):
+            parts.append(tip if parts else f"{where[3:] if where.startswith('en ') else where}: {tip}")
+        if best:
+            parts.append("tu mejor pasada")
+        if parts:
+            self.voice.say(". ".join(parts), kind="corner", prio=1, ttl=4)
+
+    def _sector_delta(self):
+        """El delta con tu referencia al pasar por los sectores (cada N, según los ajustes)."""
+        every = int(self.cfg.get("delta_every") or 0)
+        sec = self.coach.sectors
+        key = (self._cur.lap if self._cur else None, sec.idx)
+        if key == self._sector_seen:
+            return
+        changed = key[0] == self._sector_seen[0] and key[1] > self._sector_seen[1]
+        self._sector_seen = key
+        if not changed or every <= 0 or self.coach.delta is None or not msg_on(self.cfg, "delta"):
+            return
+        self._sectors_count += 1
+        if self._sectors_count % every:
+            return
+        d = self.coach.delta
+        txt = "Igual" if abs(d) < 0.05 else f"{'Más' if d > 0 else 'Menos'} {gap_es(d)}"
+        self.voice.say(txt, kind="delta", prio=1, ttl=3)
 
     def _say_lap(self, lap_time, valid, reason):
         if not self.speaker.enabled or not self.recorder.started_clean or lap_time < LapRecorder.MIN_LAP_TIME:

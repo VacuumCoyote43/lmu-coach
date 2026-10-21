@@ -56,6 +56,7 @@ Atajos (usan Python 3.12 instalado para el usuario):
 
 ## La app
 
+- **Primera vez**: un asistente de bienvenida comprueba que LMU graba la telemetría, deja elegir la voz del coach y dónde se guarda la copia de tus sesiones. Se puede repetir desde ⚙ Ajustes.
 - **Sesiones**: lee las que LMU graba en `UserData/Telemetry/*.duckdb`. Puedes filtrar por circuito, coche y tipo de sesión. En morado aparece tu récord para cada coche y circuito. Para ver las sesiones nuevas, usa "Buscar sesiones nuevas".
 - **Copia propia de tus sesiones** (💾 Copia): al buscar sesiones nuevas, la app copia las que LMU ha terminado de grabar a `Documentos\LMU Coach\Sesiones` (se puede cambiar) y lee de ahí. Aunque LMU borre sus archivos, reinstales el juego o cambies de PC (llevándote esa carpeta), no pierdes nada. La carpeta de LMU nunca se modifica.
 - **Imagen del coche**: cada sesión muestra la imagen oficial de su decoración (en la lista y en la cabecera), sacada de la propia interfaz de LMU (`Bin/UI.zip`). Si LMU está abierto al usar la app, aprende la lista completa de decoraciones y la guarda, para que también salgan las más nuevas.
@@ -71,7 +72,8 @@ Atajos (usan Python 3.12 instalado para el usuario):
   - Las sesiones importadas salen en naranja con el nombre del piloto, y se pueden filtrar con «Importadas».
   - No cuentan como tu récord. Sí aparecen en «Comparar con», para enfrentar tu vuelta a la de tu amigo.
   - Con **🗑 Quitar importada** se borra la copia de la app. LMU no se toca.
-- **Pestañas de análisis** en cada sesión:
+- **Pestañas de análisis** en cada sesión, agrupadas en **🏁 Vuelta** (gráficas, repetición y consistencia), **📊 Carrera** (resumen de carrera, ritmo y relevos, combustible y estrategia) y **🔧 Coche** (neumáticos y frenos, reglaje y asistente de reglaje):
+  - **🏁 Resumen de carrera**: posición en tu clase vuelta a vuelta, diferencias con el de delante y el de detrás, paradas, tu mejor vuelta y tu ritmo frente a los de tu clase. Lo apunta el modo coach en directo, porque la telemetría de LMU solo trae tu coche: si el coach estaba abierto durante la carrera, aquí está.
   - **⛽ Combustible y estrategia**: consumo de combustible y energía virtual por vuelta, la media de tus sesiones con ese coche y circuito, y una calculadora de paradas (vueltas por relevo, número de paradas y cuánto cargar en cada relevo).
   - **🔧 Reglaje**: diferencias entre el reglaje de la sesión y el de tu sesión más rápida, o cualquier otra, con los nombres en español.
   - **🎯 Consistencia**: cuánto varía, entre vueltas, tu punto de frenada, la velocidad en el vértice y el tiempo en cada frenada.
@@ -83,7 +85,8 @@ Atajos (usan Python 3.12 instalado para el usuario):
 |---|---|---|
 | ![Ritmo y relevos](docs/img/ritmo.png) | ![Asistente de reglaje](docs/img/asistente.png) | ![Combustible y estrategia](docs/img/combustible.png) |
 
-- **📈 Progreso**: tu mejor vuelta y tu ritmo medio por día, y la **vuelta ideal** con tus mejores sectores de todas las sesiones.
+- **📈 Mi progreso**: todos los circuitos (por trazado) y coches que has corrido, con cuánto has mejorado. Para cada uno, tu mejor vuelta y tu ritmo medio por día, la **vuelta ideal** con tus mejores sectores de todas las sesiones y un **objetivo de tiempo** («bajar de 1:46,0»). En pista, el coach te dice a cuánto estás de tu objetivo al acabar cada vuelta.
+- **📷 Imagen**: guarda una imagen de la sesión tal como la ves y la copia al portapapeles, para pegarla en Discord o WhatsApp.
 - **🎯 Plan de entrenamiento**: las 3 curvas donde más tiempo pierdes en una vuelta normal frente a tu mejor vuelta, con qué cambiar en cada una (punto de frenada, velocidad de paso, cuándo acelerar). Con «Activar en el coach», el coach te recuerda el objetivo al llegar a esas curvas, en pantalla y por voz.
 - **🏆 Ranking**: tus tiempos frente a los de las sesiones importadas de otros pilotos, por circuito y clase, con los mejores sectores de cada uno y dónde os sacáis tiempo.
 - **📌 Usar como referencia del coach**: fija la vuelta seleccionada para que el coach la persiga. Con "Quitar", el coach vuelve a usar tu mejor vuelta.
@@ -108,9 +111,13 @@ Pulsa **▶ Iniciar modo coach** y entra en pista con LMU en **ventana sin borde
 
   El sector en curso muestra el delta en directo, y en la cabecera aparece la **vuelta ideal** (la suma de tus mejores sectores).
 - **Combustible y energía**: vueltas restantes de cada uno en la cabecera (⛽ / ⚡), en ámbar o rojo cuando quedan pocas.
-- **Avisos por voz** (voz de Windows en español): «frena», cuánto ganas o pierdes en cada frenada, el tiempo de vuelta, si la vuelta se invalida y cuando queda poco combustible. Con clic derecho en el overlay se activan o desactivan, y se elige la voz (por ejemplo Pablo, Laura o Helena, según las que tenga Windows) y la velocidad. Al cambiarlas oyes una frase de prueba.
+- **Avisos por voz** (voz de Windows en español): «frena», cuánto ganas o pierdes en cada frenada y **por qué** («pierdes tres décimas en Parabolica, frenas quince metros antes»), el tiempo de vuelta, si la vuelta se invalida, cuando queda poco combustible y, si lo activas, el delta al pasar por cada sector. Con clic derecho en el overlay se activan o desactivan, y se elige la voz (por ejemplo Pablo, Laura o Helena, según las que tenga Windows) y la velocidad. Al cambiarlas oyes una frase de prueba.
 - **Temperaturas en directo**: una franja bajo el coach con la temperatura de cada goma (verde si está en la ventana óptima del compuesto, ámbar si se aleja, rojo si se pasa y azul si está fría) y de cada freno, comparada con lo que alcanza ese coche en tus sesiones. Si los frenos de un eje se pasan mucho, te avisa por voz. Se oculta con clic derecho → «Temperaturas de gomas y frenos».
+- **Modo práctica**: en la app, clic derecho en una frenada de «Dónde pierdes tiempo» → «Practicar en el coach». En pista, el coach solo te habla de esa curva: cada pasada, lo que ganas o pierdes, por qué y cuándo es tu mejor pasada.
 - **Ingeniero de carrera** (solo en carreras): arriba a la derecha, tu posición en tu clase y las diferencias con el de delante (▲) y el de detrás (▼). Por voz, al empezar cada vuelta, la posición, las diferencias y si recortas o pierdes tiempo con el de delante. También avisa si tienes un coche de tu clase a menos de 1 s, si ganas o pierdes posiciones, si el de delante o el de detrás entra en boxes, si te alcanza un coche de una clase más rápida, y cuando quedan 5 minutos o 1 vuelta. Se desactiva con clic derecho → «Ingeniero de carrera».
+  - **Estrategia en directo**: con tu consumo real de combustible y energía y lo que queda de carrera, te dice si llegas al final o cuándo parar, cuánto repostar y en qué posición volverías («Para en dos vueltas, reposta treinta litros. Volverías cuarto»). En el coach aparece «BOX en 2 v».
+  - **Banderas**: amarilla en todo el circuito, boxes abiertos o cerrados, relanzamiento, «verde, verde, verde», amarillas por sector y bandera azul.
+  - **Resumen al acabar**: «Carrera terminada. Posición tres de doce. Ganas cuatro posiciones». Se guarda para verlo luego en la pestaña Resumen de carrera de esa sesión.
 - **Spotter**: avisa por voz cuando tienes un coche al lado («Izquierda», «Derecha», «En medio», «Libre») y marca ese lado del coach con una barra ámbar. Aprende solo qué lado es cuál en las primeras curvas. Se desactiva con clic derecho → «Spotter».
 - **Daños**: avisa de golpes que dañan la carrocería, piezas sueltas, pinchazos, ruedas perdidas y motor sobrecalentado, y muestra «⚠ DAÑOS» en el coach.
 - **Mensajes ordenados**: los avisos esperan su turno con una pausa entre ellos en vez de pisarse; solo «frena», el spotter y los coches que te alcanzan interrumpen. Los cambios de posición se dicen juntos cuando se estabilizan («Ganas dos posiciones. Posición cinco»).
@@ -123,9 +130,17 @@ Pulsa **▶ Iniciar modo coach** y entra en pista con LMU en **ventana sin borde
 
 Para mover el overlay, arrástralo. Para cerrarlo, haz clic derecho → Salir, o pulsa Esc.
 
-## Configuración del overlay (`config.json`)
+## ⚙ Ajustes
 
-`opacity` (0.93) · `beep_on_brake` (false, pitido en el punto de frenada)
+Todo lo que dice el coach se elige en **⚙ Ajustes**, mensaje a mensaje, con un botón ▶ para oír cada uno. Los cambios se aplican al momento, también con el coach abierto.
+
+- **General**: voz y velocidad, opacidad del overlay, temperaturas y pitido en el punto de frenada.
+- **Spotter**: qué avisos dice («Izquierda», «Derecha», «En medio», «Libre», «Libre a la izquierda», el recordatorio «Sigue a la izquierda», «Spotter listo»), si marca el lado en el overlay y cuándo un coche cuenta como «al lado»: distancia lateral máxima, solape y pausa mínima entre avisos.
+- **Ingeniero**: cada aviso (posición, coche encima, boxes de rivales, clase más rápida, resumen de vuelta, banderas, estrategia, final de carrera), a partir de qué diferencia avisa del coche de detrás, la antelación del aviso de clase más rápida, el resumen cada cuántas vueltas y el tiempo que pierdes en una parada.
+- **Coach**: «frena», objetivos del plan, tiempo por curva y su consejo, delta por sector, tiempo de vuelta, vuelta invalidada y objetivo; y el modo práctica.
+- **Coche**: combustible, frenos calientes y cada tipo de daño.
+
+Se guarda en `config.json` (en `%LOCALAPPDATA%\LMU Coach` con la app instalada).
 
 ## Técnico
 
