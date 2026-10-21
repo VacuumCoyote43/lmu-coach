@@ -188,6 +188,15 @@ class Overlay:
         for key, icon in (("fuel_laps", "⛽"), ("ve_laps", "⚡")):
             if fuel.get(key) is not None:
                 parts.append((f"{icon} {fuel[key]:.1f} v", fuel[key]))
+        pit = st.get("pit")
+        if pit and pit.get("stop_in") is not None and st.get("race"):
+            n = pit["stop_in"]
+            txt = "BOX ESTA VUELTA" if n == 0 else f"BOX en {n} v"
+            if pit.get("add_fuel"):
+                txt += f" · +{pit['add_fuel']:.0f} L"
+            if pit.get("rejoin"):
+                txt += f" · P{pit['rejoin']}"
+            parts.append((txt, 0.0 if n == 0 else 2.0))
         if st.get("lap_invalid"):
             c.create_text(W - PAD, 22, anchor="ne", fill=RED, font=("Segoe UI Semibold", 8), text="INVALIDADA")
         elif parts:

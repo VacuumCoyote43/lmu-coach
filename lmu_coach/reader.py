@@ -220,15 +220,21 @@ class LMUReader:
                                 laps=v.mTotalLaps, lap_dist=v.mLapDist, in_pits=bool(v.mInPits),
                                 pitstops=v.mNumPitstops, is_player=bool(v.mIsPlayer), best=v.mBestLapTime,
                                 last=v.mLastLapTime, est=v.mEstimatedLapTime, finished=v.mFinishStatus != 0,
-                                behind_leader=v.mTimeBehindLeader, laps_behind_leader=v.mLapsBehindLeader))
+                                behind_leader=v.mTimeBehindLeader, laps_behind_leader=v.mLapsBehindLeader,
+                                flag=v.mFlag))
         timed = 0 < si.mEndET < 1e7
         laps_left = None
         if 0 < si.mMaxLaps < 10000:
             lead = max((c.laps for c in cars), default=0)
             laps_left = max(0, si.mMaxLaps - lead)
-        # carrera con bandera verde (5) o coche de seguridad (6)
-        return RaceInfo(is_race=si.mSession >= 10 and si.mGamePhase in (5, 6), track_len=si.mLapDist,
-                        time_left=(si.mEndET - si.mCurrentET) if timed else None, laps_left=laps_left, cars=cars)
+        # carrera en marcha: verde (5), amarilla general (6), parada (7), terminada (8) o en pausa (9)
+        # (las amarillas por sector vienen como [sector 3, sector 1, sector 2]; 1 = amarilla)
+        sf = list(si.mSectorFlag)
+        return RaceInfo(is_race=si.mSession >= 10 and 5 <= si.mGamePhase <= 9, track_len=si.mLapDist,
+                        time_left=(si.mEndET - si.mCurrentET) if timed else None, laps_left=laps_left, cars=cars,
+                        phase=si.mGamePhase, yellow_state=si.mYellowFlagState,
+                        sector_flags=(int(sf[1] == 1), int(sf[2] == 1), int(sf[0] == 1)),
+                        track=_s(si.mTrackName), session_over=si.mGamePhase == 8)
 
     _ve_seen_max = 0.0
 

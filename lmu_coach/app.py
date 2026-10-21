@@ -3,7 +3,7 @@ import argparse
 import threading
 import time
 
-from . import corners, goals, training
+from . import corners, goals, pitplan, racelog, training
 from .engineer import Engineer
 from .spotter import DamageWatch, Spotter
 from .coach import LiveCoach
@@ -43,9 +43,9 @@ def beep():
 
 # prioridad (más alta, antes) y caducidad (s) de cada aviso del ingeniero
 ENGINEER_PRIO = {"close": 3, "position": 2, "pit": 1, "fastclass": 3, "end5": 2, "lastlap": 2, "flag": 3,
-                 "pitwindow": 2}
+                 "pitwindow": 2, "raceend": 2}
 ENGINEER_TTL = {"close": 3, "position": 6, "pit": 8, "fastclass": 3, "end5": 20, "lastlap": 20, "flag": 6,
-                "pitwindow": 15}
+                "pitwindow": 15, "raceend": 30}
 
 
 class _Z:
@@ -90,6 +90,9 @@ class App:
         self._spot_next = self._damage_next = 0.0
         self._summary_due = None
         self._race_next = 0.0
+        self.pit_state = None         # estrategia en directo (para el overlay)
+        self._pit_said = set()
+        self._race_saved = False
         self._spoken_corner = None
         self._corner_ctx = None
         self.plan = []
@@ -236,6 +239,7 @@ class App:
             "fuel": self._fuel_state(s),
             "temps": self._temps_state(s) if self.cfg.get("temps", True) else None,
             "race": self.engineer.state if self.cfg.get("engineer", True) else None,
+            "pit": self.pit_state if self.cfg.get("engineer", True) else None,
             "spot": (self.spotter.state if self.cfg.get("spotter", True) and self.cfg.get("spot_overlay", True)
                      else None),
             "damage": self.damage.state,
@@ -459,6 +463,14 @@ class App:
             return
         if info is None:
             return
+        if not info.is_race:
+            self.pit_state = None
+            self._pit_said.clear()
+            self._race_saved = False
+            self._in_race = False
+        elif not getattr(self, "_in_race", False):
+            self._in_race = True
+            self.engineer.reset()          # carrera nueva: nada de la anterior
         for msg, kind in self.engineer.update(info):
             self._say(kind, msg, kind=kind, prio=ENGINEER_PRIO.get(kind, 1), ttl=ENGINEER_TTL.get(kind, 6),
                            interrupt=kind in ("close", "fastclass"))   # te van a alcanzar: no puede esperar
@@ -469,6 +481,42 @@ class App:
         if self._summary_due and now >= self._summary_due[1]:
             self._say("summary", self._summary_due[0], kind="summary", prio=1, ttl=15)
             self._summary_due = None
+        if info.is_race:
+            self._strategy(info)
+        if self.engineer.finished and not self._race_saved and not self.demo:
+            self._race_saved = True
+            try:
+                track, car = self.ref_key or (info.track, "")
+                racelog.save(self.engineer.finished, track, car)
+                self.overlay.toast("Resumen de la carrera guardado (míralo en la app)", MUTED, 6)
+            except Exception:
+                log.warning("No se pudo guardar el resumen de la carrera", exc_info=True)
+
+    def _strategy(self, info):
+        """Cuándo parar y cuánto repostar, con tu consumo real; lo dice al empezar cada relevo y al acercarse."""
+        s, eng = self._cur, self.engineer
+        me = getattr(eng, "_me", None)
+        if s is None or me is None or s.in_pits or info.session_over:
+            return
+        L = info.track_len or s.track_len or 1.0
+        frac = min(0.999, max(0.0, me.lap_dist / L))
+        need = pitplan.remaining_laps(info.time_left, info.laps_left, eng._lap_t, frac)
+        fuel_pl, ve_pl = self._per_lap()
+        p = pitplan.plan(need, frac, s.fuel, fuel_pl, s.ve, ve_pl, s.fuel_capacity) if need is not None else None
+        if p is None:
+            self.pit_state = None
+            return
+        rejoin = None if p.makes_it else eng.pit_rejoin(float(self.cfg.get("eng_pit_loss", 30.0)))
+        self.pit_state = {"stop_in": p.stop_in, "add_fuel": p.add_fuel, "ve_target": p.ve_target, "rejoin": rejoin}
+        if me.laps < 1 or not (self.fuel_laps or self.ve_laps):
+            return      # aún sin una vuelta de consumo real: el cálculo no es fiable
+        stint = me.pitstops
+        keys = [("start", stint)] + ([("stop", stint, p.stop_in)] if p.stop_in is not None and p.stop_in <= 2 else [])
+        for key in keys:
+            if key not in self._pit_said:
+                self._pit_said.update(keys)       # una sola frase aunque toquen las dos
+                self._say("pitwindow", pitplan.spoken(p, rejoin), kind="pitwindow", prio=2, ttl=15)
+                break
 
     def _spot_step(self):
         """Spotter (~20 veces por segundo) y daños (2 por segundo)."""

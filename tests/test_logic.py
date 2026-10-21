@@ -136,6 +136,93 @@ class EngineerTest(unittest.TestCase):
         self.assertIsNone(e.state)
 
 
+class FlagsAndSummaryTest(unittest.TestCase):
+    L = 4000.0
+
+    def info(self, cars, **kw):
+        return RaceInfo(True, self.L, 1800, None, cars, **kw)
+
+    def test_full_course_yellow_and_green(self):
+        e = Engineer()
+        cars = [car(1, 3, 1000, me=True), car(2, 3, 900, behind=5)]
+        e.update(self.info(cars, phase=5), now=0)
+        said = e.update(self.info(cars, phase=6, yellow_state=2), now=1)
+        self.assertEqual([m for m, k in said if k == "flag"], ["Amarilla en todo el circuito. No adelantes",
+                                                                "Boxes cerrados"])
+        said = e.update(self.info(cars, phase=6, yellow_state=4), now=2)
+        self.assertEqual([m for m, k in said if k == "flag"], ["Boxes abiertos"])
+        said = e.update(self.info(cars, phase=5), now=3)
+        self.assertEqual([m for m, k in said if k == "flag"], ["Verde, verde, verde"])
+
+    def test_sector_yellow_and_blue_flag_not_repeated(self):
+        e = Engineer()
+        me = car(1, 3, 1000, me=True)
+        e.update(self.info([me, car(2, 3, 900, behind=5)]), now=0)
+        said = e.update(self.info([me, car(2, 3, 900, behind=5)], sector_flags=(0, 1, 0)), now=1)
+        self.assertIn("Amarilla en el sector dos", [m for m, _ in said])
+        said = e.update(self.info([me, car(2, 3, 900, behind=5)], sector_flags=(0, 1, 0)), now=2)
+        self.assertFalse([m for m, k in said if k == "flag"])
+        me.flag = 6
+        said = e.update(self.info([me, car(2, 3, 900, behind=5)]), now=3)
+        self.assertIn("Bandera azul, deja pasar", [m for m, _ in said])
+
+    def test_race_summary_at_the_end(self):
+        e = Engineer()
+        order = lambda me_place, laps: [car(p, laps, 1000 - p * 10, me=(p == me_place),
+                                            name="yo" if p == me_place else f"r{p}") for p in range(1, 6)]
+        e.update(self.info(order(4, 0)), now=0)                 # sales cuarto
+        for lap, (pos, t) in enumerate(((4, 10), (3, 20), (2, 30)), start=1):
+            e.update(self.info(order(pos, lap)), now=t)
+        said = e.update(self.info(order(2, 3), session_over=True, phase=8), now=40)
+        self.assertEqual([k for _, k in said], ["raceend"])
+        self.assertIn("Ganas dos posiciones", said[0][0])
+        self.assertEqual((e.finished["start"], e.finished["finish"], e.finished["of"]), (4, 2, 5))
+        self.assertEqual([r[1] for r in e.finished["log"]], [4, 3, 2])
+        self.assertFalse(e.update(self.info(order(2, 3), session_over=True, phase=8), now=41))   # una vez
+
+    def test_pit_rejoin_counts_cars_within_pit_loss(self):
+        e = Engineer()
+        cars = [car(1, 5, 1000, me=True), car(2, 5, 900, behind=8), car(3, 5, 800, behind=20),
+                car(4, 5, 700, behind=45)]
+        e.update(self.info(cars), now=0)
+        self.assertEqual(e.pit_rejoin(30), 3)                   # pasan los que van a 8 y 20 s
+
+
+class PitPlanTest(unittest.TestCase):
+    def test_makes_it(self):
+        from lmu_coach import pitplan
+        p = pitplan.plan(10, 0.0, fuel=60, fuel_pl=3.0, ve=None, ve_pl=None)
+        self.assertTrue(p.makes_it)
+        self.assertEqual(pitplan.spoken(p), "Con este consumo llegas al final")
+
+    def test_stop_lap_and_refuel(self):
+        from lmu_coach import pitplan
+        # 20 vueltas por delante, 30 L a 3 L/vuelta = 10 vueltas; justo cruzando meta
+        p = pitplan.plan(20, 0.0, fuel=30, fuel_pl=3.0, ve=None, ve_pl=None, capacity=100)
+        self.assertEqual(p.stop_in, 8)            # 1 vuelta para cruzar + 8 completas, con reserva
+        # al salir faltan 20 - 1 - 8 = 11 vueltas: 11,35 × 3 = 34,05 L menos los 3 que quedan
+        self.assertAlmostEqual(p.add_fuel, 31.05, places=2)
+        p = pitplan.plan(20, 0.5, fuel=2.0, fuel_pl=3.0, ve=40, ve_pl=4.0)
+        self.assertEqual(p.stop_in, 0)
+        self.assertEqual(p.limit, "fuel")
+        self.assertIn("Entra en boxes al acabar esta vuelta", pitplan.spoken(p, rejoin=3))
+        self.assertIn("Volverías tercero", pitplan.spoken(p, rejoin=3))
+
+    def test_energy_limits(self):
+        from lmu_coach import pitplan
+        p = pitplan.plan(15, 0.0, fuel=80, fuel_pl=3.0, ve=30, ve_pl=5.0)
+        self.assertEqual(p.limit, "ve")
+        self.assertIsNotNone(p.ve_target)
+        self.assertLessEqual(p.ve_target, 100)
+
+    def test_remaining_laps(self):
+        from lmu_coach import pitplan
+        self.assertEqual(pitplan.remaining_laps(None, 10, 100, 0.25), 9.75)
+        # 10 min con vueltas de 100 s, a mitad de vuelta: 0,5 hasta meta + 6 (5,5 redondeado arriba)
+        self.assertEqual(pitplan.remaining_laps(600, None, 100, 0.5), 6.5)
+        self.assertIsNone(pitplan.remaining_laps(None, None, 100, 0))
+
+
 class SpotterTest(unittest.TestCase):
     def drive_circle(self, mirror):
         """Giro a la derecha en un círculo, con un rival por fuera y otro por dentro; el mundo puede ir espejado."""

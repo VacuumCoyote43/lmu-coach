@@ -258,6 +258,9 @@ class SettingsDialog(QDialog):
         f.addRow("«Coche detrás» por debajo de:", self._spin("eng_close_s", 0.3, 3.0, 0.1, 1, " s"))
         f.addRow("Aviso de clase más rápida con:", self._spin("eng_fast_s", 1.0, 6.0, 0.5, 1, " s de antelación"))
         f.addRow("Resumen cada:", self._spin("eng_summary_every", 1, 10, 1, 0, " vueltas"))
+        f.addRow("Tiempo perdido en una parada:", self._spin("eng_pit_loss", 10, 120, 1, 0, " s"))
+        f.addRow(_note("Entrar en boxes, repostar y salir frente a seguir en pista. Sirve para decirte en qué "
+                       "posición volverías. Míralo en la pestaña «Ritmo y relevos» de una carrera con parada."))
         return self._page(on, self._messages("engineer"), params)
 
     def _coach_tab(self):
@@ -316,7 +319,7 @@ class SettingsDialog(QDialog):
     TAB_KEYS = {
         0: ["voice", "opacity", "temps", "beep_on_brake"],
         1: ["spotter", "spot_overlay", "spot_side", "spot_len", "spot_gap", "spot_still_s"],
-        2: ["engineer", "eng_close_s", "eng_fast_s", "eng_summary_every"],
+        2: ["engineer", "eng_close_s", "eng_fast_s", "eng_summary_every", "eng_pit_loss"],
         3: ["delta_every"],
         4: [],
     }

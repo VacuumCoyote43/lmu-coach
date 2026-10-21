@@ -5,7 +5,7 @@ import time
 import unittest
 from types import SimpleNamespace
 
-from lmu_coach import archive, config, corners, goals, training
+from lmu_coach import archive, config, corners, goals, racelog, training
 from lmu_coach.car_images import CarImages
 
 from .helpers import TempDirTest
@@ -186,6 +186,29 @@ class ConfigTest(TempDirTest):
         keys = [m.key for m in config.MESSAGES]
         self.assertEqual(len(keys), len(set(keys)))
         self.assertTrue(all(m.group in config.GROUPS for m in config.MESSAGES))
+
+
+class RaceLogTest(TempDirTest):
+    def setUp(self):
+        super().setUp()
+        self._dir = racelog.RACES_DIR
+        racelog.RACES_DIR = self.tmp / "races"
+
+    def tearDown(self):
+        racelog.RACES_DIR = self._dir
+        super().tearDown()
+
+    def test_save_and_find_by_session_start(self):
+        import json
+        p = racelog.save({"start": 4, "finish": 2, "of": 9, "log": [(1, 4, 1.0, None, False)], "spoken": "x"},
+                         "Monza", "296")
+        d = json.loads(p.read_text(encoding="utf-8"))
+        self.assertNotIn("spoken", d)
+        d["saved"] = "2026-10-19 21:10"                      # la carrera empezó a las 20:30
+        p.write_text(json.dumps(d), encoding="utf-8")
+        self.assertEqual(racelog.find("Monza", "296", "2026-10-19 20:30")["finish"], 2)
+        self.assertIsNone(racelog.find("Monza", "911", "2026-10-19 20:30"))
+        self.assertIsNone(racelog.find("Monza", "296", "2026-10-19 22:00"))     # guardado antes de empezar
 
 
 class LogTest(TempDirTest):

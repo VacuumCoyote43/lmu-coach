@@ -22,6 +22,7 @@ DEFAULT_CONFIG = {
     "eng_close_s": 1.0,      # «coche detrás» por debajo de esta diferencia
     "eng_fast_s": 2.5,       # aviso de clase más rápida con esta antelación
     "eng_summary_every": 1,  # resumen cada N vueltas
+    "eng_pit_loss": 30.0,    # s que pierdes en una parada (entrar, repostar y salir), para saber dónde vuelves
     # coach
     "delta_every": 0,        # decir el delta con tu referencia cada N sectores (0 = nunca)
     "practice_corner": None,  # modo práctica: solo se habla de esta frenada (nº de curva)
@@ -67,7 +68,9 @@ MESSAGES = [
     Msg("end5", "engineer", "Quedan cinco minutos", "Quedan cinco minutos"),
     Msg("lastlap", "engineer", "Última vuelta", "Última vuelta"),
     Msg("flag", "engineer", "Banderas amarilla y coche de seguridad", "Amarilla en el sector dos"),
-    Msg("pitwindow", "engineer", "Estrategia: cuándo parar", "Para en dos vueltas, reposta treinta litros"),
+    Msg("pitwindow", "engineer", "Estrategia: cuándo parar", "Para en dos vueltas, reposta treinta litros",
+        help="Con tu consumo real y lo que queda de carrera; también te dice en qué posición volverías"),
+    Msg("raceend", "engineer", "Resumen al acabar la carrera", "Carrera terminada. Posición cuatro de doce"),
     # coach
     Msg("brake", "coach", "«Frena» antes de cada frenada", "Frena"),
     Msg("plan", "coach", "Objetivo del plan antes de la curva", "Rettifilo: frena 10 metros antes"),

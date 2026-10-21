@@ -29,6 +29,7 @@ class RaceCar:
     finished: bool = False
     behind_leader: float = 0.0      # s detrás del líder (según el juego)
     laps_behind_leader: int = 0
+    flag: int = 0                   # bandera que ve este coche (6 = azul)
 
 
 def _pace(c: RaceCar) -> float:
@@ -46,6 +47,15 @@ class RaceInfo:
     time_left: float | None      # s (None si es a vueltas)
     laps_left: int | None
     cars: list = field(default_factory=list)
+    phase: int = 5                  # 5 verde, 6 amarilla en todo el circuito / coche de seguridad, 8 terminada
+    yellow_state: int = 0           # con amarilla general: 2 boxes cerrados, 4 abiertos, 5 última vuelta, 6 reanudación
+    sector_flags: tuple = (0, 0, 0)  # amarillas locales en los sectores 1, 2 y 3
+    track: str = ""
+    session_over: bool = False
+
+
+BLUE_FLAG = 6
+FCY_TEXT = {2: "Boxes cerrados", 4: "Boxes abiertos", 5: "Se relanza en esta vuelta"}
 
 
 def _progress(c: RaceCar, L: float) -> float:
@@ -94,6 +104,20 @@ class Engineer:
         self.state = None
         self.pending_summary = None        # resumen de la vuelta (se dice unos segundos después de cruzar meta)
         self._pos_seen, self._pos_since = None, 0.0
+        # banderas
+        self._phase = None
+        self._fcy_state = None
+        self._sector_said = [-1e9] * 3
+        self._blue_said = -1e9
+        # para el resumen de la carrera
+        self.start_pos = None
+        self.laps_log = []                 # [(vuelta, posición, delante, detrás, en boxes)]
+        self.my_laps = []                  # [(vuelta, tiempo)]
+        self.class_best = {}               # piloto -> mejor vuelta (tu clase)
+        self.stops = 0
+        self.finished = None               # resumen al terminar (dict) cuando se acaba la carrera
+        self.last_mine = []                # tu clase, ordenada (para la estrategia)
+        self.last_info = None
 
     def update(self, info: RaceInfo, now: float | None = None) -> list[tuple[str, str]]:
         """Procesa una lectura (unas 4 por segundo) y devuelve [(frase, tipo)] para decir ahora."""
@@ -108,6 +132,12 @@ class Engineer:
         lap_t = _pace(me) or 100.0
         mine = sorted([c for c in info.cars if c.cls == me.cls], key=lambda c: c.place)
         pos = mine.index(me) + 1
+        self.last_mine, self.last_info, self._me, self._lap_t = mine, info, me, lap_t
+        if self.start_pos is None and me.laps == 0:
+            self.start_pos = pos
+        for c in mine:
+            if c.best and c.best > 0:
+                self.class_best[c.driver] = c.best
         ahead = mine[pos - 2] if pos > 1 else None
         behind = mine[pos] if pos < len(mine) else None
         def gap(a, b):
@@ -119,6 +149,16 @@ class Engineer:
         g_ahead = gap(ahead, me) if ahead else None
         g_behind = gap(me, behind) if behind else None
         out = []
+
+        # carrera terminada (bandera a cuadros para ti o fin de la sesión): solo el resumen
+        if info.session_over or me.finished:
+            if self.finished is None:
+                if me.last and me.last > 0 and (not self.my_laps or self.my_laps[-1][0] != me.laps):
+                    self.my_laps.append((me.laps, me.last))
+                self.finished = self.race_summary(pos, len(mine), me)
+                out.append((self.finished["spoken"], "raceend"))
+            self.state = None
+            return out
 
         # cambios de posición: se anuncian juntos cuando la posición lleva unos segundos estable
         # (en una curva con varios adelantamientos, un solo mensaje con el resultado)
@@ -162,8 +202,17 @@ class Engineer:
                 out.append((f"{c.cls} detrás, déjale sitio", "fastclass"))
                 break
 
+        out += self._flags(info, me, now)
+
         # resumen al empezar cada vuelta
         if me.laps != self.last_lap:
+            if self.last_lap is not None and me.laps > self.last_lap:
+                self.laps_log.append((me.laps, pos, g_ahead, g_behind, me.in_pits))
+                if me.last and me.last > 0:
+                    self.my_laps.append((me.laps, me.last))
+            if self.start_pos is None:
+                self.start_pos = pos
+            self.stops = me.pitstops
             if self.last_lap is not None and not me.in_pits and me.laps % self.summary_every == 0:
                 self.pending_summary = self._lap_summary(pos, len(mine), ahead, behind, g_ahead, g_behind, me.laps)
             self.last_lap = me.laps
@@ -184,6 +233,77 @@ class Engineer:
                       "trend_ahead": self._trend(ahead.driver) if ahead else None,
                       "trend_behind": self._trend(behind.driver) if behind else None}
         return [x for x in out if x and x[0]]
+
+    def _flags(self, info: RaceInfo, me: RaceCar, now: float) -> list[tuple[str, str]]:
+        """Amarilla en todo el circuito / coche de seguridad, amarillas por sector y bandera azul."""
+        out = []
+        if self._phase is not None and info.phase != self._phase:
+            if info.phase == 6:
+                out.append(("Amarilla en todo el circuito. No adelantes", "flag"))
+            elif self._phase == 6 and info.phase == 5:
+                out.append(("Verde, verde, verde", "flag"))
+        self._phase = info.phase
+        if info.phase == 6:
+            if info.yellow_state != self._fcy_state and info.yellow_state in FCY_TEXT:
+                out.append((FCY_TEXT[info.yellow_state], "flag"))
+            self._fcy_state = info.yellow_state
+        else:
+            self._fcy_state = None
+            for i, f in enumerate(info.sector_flags):
+                if f and now - self._sector_said[i] > 20:
+                    self._sector_said[i] = now
+                    out.append((f"Amarilla en el sector {_n(i + 1)}", "flag"))
+                elif not f:
+                    self._sector_said[i] = min(self._sector_said[i], now - 15)   # puede volver a avisar pronto
+        if me.flag == BLUE_FLAG and now - self._blue_said > 30:
+            self._blue_said = now
+            out.append(("Bandera azul, deja pasar", "flag"))
+        return out
+
+    def pit_rejoin(self, pit_loss: float) -> int | None:
+        """Posición en tu clase en la que volverías a pista si paras ahora (pierdes pit_loss segundos)."""
+        mine, info = self.last_mine, self.last_info
+        me = getattr(self, "_me", None)
+        if not mine or info is None or me is None:
+            return None
+        L = info.track_len or 1.0
+        lap_t = self._lap_t or 100.0
+        pos = mine.index(me) + 1 if me in mine else None
+        if pos is None:
+            return None
+        lost = 0
+        for c in mine[pos:]:
+            if c.in_pits:
+                continue
+            if me.laps_behind_leader == c.laps_behind_leader and (me.behind_leader or c.behind_leader):
+                g = c.behind_leader - me.behind_leader
+            else:
+                g = (_progress(me, L) - _progress(c, L)) * lap_t
+            if g < pit_loss:
+                lost += 1
+        return pos + lost
+
+    def race_summary(self, pos, n, me) -> dict:
+        """Lo que pasó en la carrera, para la voz y para guardarlo (la app lo enseña en la sesión)."""
+        import statistics
+        laps = [t for _, t in self.my_laps]
+        clean = sorted(laps)[:max(1, int(len(laps) * 0.8))] if laps else []
+        pace = statistics.median(clean) if clean else None
+        rivals = sorted(t for d, t in self.class_best.items() if d != me.driver)
+        start = self.start_pos or pos
+        gained = start - pos
+        if gained > 0:
+            delta = f"Ganas {_n(gained)} posiciones" if gained > 1 else "Ganas una posición"
+        elif gained < 0:
+            delta = f"Pierdes {_n(-gained)} posiciones" if gained < -1 else "Pierdes una posición"
+        else:
+            delta = "Mantienes la posición"
+        best = min(laps) if laps else (me.best if me.best > 0 else None)
+        return {"start": start, "finish": pos, "of": n, "cls": me.cls, "laps": me.laps, "best": best,
+                "pace": pace, "class_best": rivals[0] if rivals else None,
+                "class_median_best": statistics.median(rivals) if rivals else None,
+                "stops": me.pitstops, "log": self.laps_log, "my_laps": self.my_laps,
+                "spoken": f"Carrera terminada. Posición {_n(pos)} de {_n(n)}. {delta}"}
 
     def _trend(self, driver) -> float | None:
         """Cuánto cambia la diferencia con ese coche por vuelta (media de las 3 últimas vueltas)."""

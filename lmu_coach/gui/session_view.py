@@ -15,6 +15,7 @@ from .insights import (
     AssistantTab, ConsistencyTab, FuelTab, PaceTab, SetupTab, TrainingDialog, TyresTab,
 )
 from .lap_picker import LapPicker
+from .race_tab import RaceSummaryTab
 from .replay import ReplayView
 from .. import analysis, corners, lapstats, share
 from ..laps import LapStore, fmt_time
@@ -114,13 +115,14 @@ class SessionView(QWidget):
         self.tyres_tab = TyresTab()
         self.pace_tab = PaceTab()
         self.assistant_tab = AssistantTab()
+        self.race_tab = RaceSummaryTab()
         # tres grupos (la vuelta, la carrera y el coche), cada uno con sus pestañas
         self.tabs = QTabWidget()
         self.groups = []
         for title, pages in (
                 ("🏁  Vuelta", [(self.charts, "📈  Gráficas"), (self.replay, "▶  Repetición"),
                                (self.cons_tab, "🎯  Consistencia")]),
-                ("📊  Carrera", [(self.pace_tab, "📉  Ritmo y relevos"),
+                ("📊  Carrera", [(self.race_tab, "🏁  Resumen de carrera"), (self.pace_tab, "📉  Ritmo y relevos"),
                                 (self.fuel_tab, "⛽  Combustible y estrategia")]),
                 ("🔧  Coche", [(self.tyres_tab, "🛞  Neumáticos y frenos"), (self.setup_tab, "🔧  Reglaje"),
                               (self.assistant_tab, "🧠  Asistente de reglaje")])):
@@ -565,7 +567,8 @@ class SessionView(QWidget):
             self.replay.setFocus()
         if not self.sd or w in self._loaded_tabs:
             return
-        if w in (self.fuel_tab, self.setup_tab, self.cons_tab, self.tyres_tab, self.assistant_tab, self.pace_tab):
+        if w in (self.fuel_tab, self.setup_tab, self.cons_tab, self.tyres_tab, self.assistant_tab, self.pace_tab,
+                 self.race_tab):
             QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
                 if w is self.fuel_tab:
@@ -576,6 +579,8 @@ class SessionView(QWidget):
                     self.cons_tab.set_data(self.sd)
                 elif w is self.assistant_tab:
                     self.assistant_tab.set_data(self.sd, self._own_infos())
+                elif w is self.race_tab:
+                    self.race_tab.set_session(self.sd.info)
                 elif w is self.pace_tab:
                     self.pace_tab.set_data(self._lap_stats())
                 elif w is self.tyres_tab:

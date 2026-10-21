@@ -1,3 +1,3 @@
 ﻿"""Versión de la app: único sitio donde se cambia (build.bat se la pasa al instalador)."""
-__version__ = "1.13.0"
+__version__ = "1.14.0"
 GITHUB_REPO = "VacuumCoyote43/lmu-coach"
