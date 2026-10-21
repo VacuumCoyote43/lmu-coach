@@ -70,6 +70,10 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         tb.addWidget(spacer)
+        self.progress_btn = QPushButton("📈  Mi progreso")
+        self.progress_btn.setToolTip("Tu evolución en cada circuito y coche, tu vuelta ideal y tus objetivos")
+        self.progress_btn.clicked.connect(self._show_progress)
+        tb.addWidget(self.progress_btn)
         self.rank_btn = QPushButton("🏆  Ranking")
         self.rank_btn.setToolTip("Tus tiempos frente a los de las sesiones importadas de otros pilotos")
         self.rank_btn.clicked.connect(lambda: RankingDialog(self, self.index.sessions, short_track).exec())
@@ -209,6 +213,10 @@ class MainWindow(QMainWindow):
     def _show_update(self):
         if self._release:
             UpdateDialog(self, self._release).exec()
+
+    def _show_progress(self):
+        from .progress import MyProgressDialog
+        MyProgressDialog(self, self.index.sessions).exec()
 
     # --- ajustes y bienvenida -------------------------------------------------
 

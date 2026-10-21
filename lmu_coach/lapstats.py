@@ -465,6 +465,58 @@ def ideal_lap(infos):
     return best, best_real
 
 
+@dataclass
+class ComboStats:
+    """Tu historial con un coche en un circuito (para «Mi progreso»)."""
+    track: str
+    car: str
+    car_class: str
+    sessions: int
+    laps: int              # vueltas válidas
+    best: float
+    best_day: str
+    first_best: float      # mejor vuelta del primer día que corriste ahí
+    ideal: float | None    # suma de tus mejores sectores
+    first_day: str
+    last_day: str
+    days: int              # días distintos
+    last_week_gain: float | None   # cuánto has bajado tu récord en los últimos 7 días de actividad
+    infos: list = field(default_factory=list, repr=False)
+    layout: str = ""       # trazado (Silverstone WEC / ELMS); igual que el circuito si solo hay uno
+
+    @property
+    def gained(self) -> float:
+        return self.first_best - self.best
+
+
+def overview(index_sessions) -> list[ComboStats]:
+    """Un resumen por circuito y coche con tus sesiones (las importadas no cuentan). Lo último primero."""
+    combos = defaultdict(list)
+    for s in index_sessions:
+        if not s.imported and not s.error and s.best:
+            combos[(s.track, s.layout or s.track, s.car)].append(s)
+    out = []
+    for (track, layout, car), infos in combos.items():
+        days = progress(infos)
+        if not days:
+            continue
+        laps = sum(d["laps"] for d in days)
+        best_d = min(days, key=lambda d: d["best"])
+        sectors, _ = ideal_lap(infos)
+        ideal = sum(x.time for x in sectors) if sectors else None
+        # los últimos 7 días con actividad frente a todo lo anterior
+        gain = None
+        if len(days) > 1:
+            n_recent = min(7, len(days) - 1)
+            before, recent = days[:-n_recent], days[-n_recent:]
+            gain = max(0.0, min(d["best"] for d in before) - min(d["best"] for d in recent))
+        out.append(ComboStats(track, car, infos[0].car_class, len(infos), laps, best_d["best"], best_d["day"],
+                              days[0]["best"], ideal, days[0]["day"], days[-1]["day"], len(days), gain, infos,
+                              layout))
+    out.sort(key=lambda c: c.last_day, reverse=True)
+    return out
+
+
 # --------------------------------------------------------------------------- ranking con otros pilotos
 
 @dataclass

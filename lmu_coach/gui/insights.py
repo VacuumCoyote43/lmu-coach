@@ -1,11 +1,9 @@
 """Pestañas de análisis de la vista de sesión: combustible y estrategia, reglaje, consistencia,
-neumáticos y frenos; y la ventana de progreso con la vuelta ideal."""
-import datetime as dt
-
+neumáticos y frenos, ritmo, asistente de reglaje, plan y ranking."""
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QBrush, QColor, QFont
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QPushButton, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -386,65 +384,6 @@ class TyresTab(QWidget):
 
 
 # --------------------------------------------------------------------------- progreso y vuelta ideal
-
-class ProgressDialog(QDialog):
-    def __init__(self, parent, title: str, infos):
-        super().__init__(parent)
-        self.setWindowTitle(f"Progreso · {title}")
-        self.resize(1000, 680)
-        lay = QVBoxLayout(self)
-        head = QLabel(title)
-        head.setObjectName("title")
-        lay.addWidget(head)
-
-        days = ls.progress(infos)
-        plot = pg.PlotWidget()
-        plot.showGrid(x=True, y=True, alpha=0.15)
-        plot.setLabel("left", "Tiempo de vuelta (s)")
-        if days:
-            x = np.arange(len(days))
-            # todas las vueltas válidas (puntos), mejor del día y mediana
-            for i, d in enumerate(days):
-                ts = [lap[1] for s in infos if s.recorded[:10] == d["day"] for lap in s.lap_list if lap[2]]
-                plot.addItem(pg.ScatterPlotItem(np.full(len(ts), i) + np.random.uniform(-0.15, 0.15, len(ts)), ts,
-                                                size=4, pen=None, brush=pg.mkBrush(150, 155, 165, 90)))
-            plot.plot(x, [d["median"] for d in days], pen=pg.mkPen(theme.MUTED, width=2), symbol="o",
-                      symbolSize=6, symbolBrush=theme.MUTED, name="mediana")
-            plot.plot(x, [d["best"] for d in days], pen=pg.mkPen(theme.PURPLE, width=2.5), symbol="o",
-                      symbolSize=8, symbolBrush=theme.PURPLE, name="mejor")
-            ax = plot.getAxis("bottom")
-            ax.setTicks([[(i, d["day"][5:]) for i, d in enumerate(days)]])
-            best_all = min(d["best"] for d in days)
-            lo = best_all - 1
-            hi = np.percentile([d["median"] for d in days], 90) + 3
-            plot.setYRange(lo, hi)
-        lay.addWidget(plot, 1)
-        legend = _note("Morado: tu mejor vuelta del día · Gris: mediana de tus vueltas válidas · Puntos: cada vuelta")
-        lay.addWidget(legend)
-
-        sectors, real = ls.ideal_lap(infos)
-        box = QGroupBox("Vuelta ideal (tus mejores sectores de todas las sesiones)")
-        bl = QVBoxLayout(box)
-        if sectors:
-            ideal = sum(s.time for s in sectors)
-            gain = (real[0] - ideal) if real else 0
-            lbl = QLabel(f"<span style='font-size:18pt; font-weight:600; color:{theme.PURPLE}'>{fmt_time(ideal)}</span>"
-                         f"&nbsp;&nbsp; tu mejor vuelta real: <b>{fmt_time(real[0])}</b> ({real[1]}, V{real[2]})"
-                         f" · margen de mejora: <b>{gain:.3f} s</b>")
-            bl.addWidget(lbl)
-            t = _table(["Sector", "Mejor tiempo", "Sesión", "Vuelta"], stretch=2)
-            t.setRowCount(3)
-            for r, s in enumerate(sectors):
-                t.setItem(r, 0, _it(f"S{r + 1}"))
-                t.setItem(r, 1, _it(f"{s.time:.3f}", RIGHT, theme.PURPLE, bold=True))
-                t.setItem(r, 2, _it(s.session))
-                t.setItem(r, 3, _it(f"V{s.lap}", Qt.AlignCenter))
-            t.setFixedHeight(4 * 27 + 8)
-            bl.addWidget(t)
-        else:
-            bl.addWidget(_note("Aún no hay sectores suficientes (hacen falta vueltas válidas con los tres sectores)."))
-        lay.addWidget(box)
-
 
 # --------------------------------------------------------------------------- asistente de reglaje
 

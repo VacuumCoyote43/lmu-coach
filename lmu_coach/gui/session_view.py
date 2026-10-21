@@ -12,7 +12,7 @@ from . import car_pix, theme
 from .charts import TelemetryCharts, TrackMap
 from .common import SESSION_TYPES, fmt_sec, item, make_table, section, short_track
 from .insights import (
-    AssistantTab, ConsistencyTab, FuelTab, PaceTab, ProgressDialog, SetupTab, TrainingDialog, TyresTab,
+    AssistantTab, ConsistencyTab, FuelTab, PaceTab, SetupTab, TrainingDialog, TyresTab,
 )
 from .lap_picker import LapPicker
 from .replay import ReplayView
@@ -599,5 +599,6 @@ class SessionView(QWidget):
     def _show_progress(self):
         if not self.sd:
             return
+        from .progress import MyProgressDialog
         i = self.sd.info
-        ProgressDialog(self, f"{short_track(i.track)} · {i.car}", self._own_infos()).exec()
+        MyProgressDialog(self, self.index_getter().sessions, (i.track, i.car, i.layout or i.track)).exec()

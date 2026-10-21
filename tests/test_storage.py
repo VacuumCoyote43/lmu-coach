@@ -5,7 +5,7 @@ import time
 import unittest
 from types import SimpleNamespace
 
-from lmu_coach import archive, corners, training
+from lmu_coach import archive, config, corners, goals, training
 from lmu_coach.car_images import CarImages
 
 from .helpers import TempDirTest
@@ -130,8 +130,62 @@ class CarImageGuessTest(unittest.TestCase):
         self.assertIsNone(self.ci._guess("Equipo Inventado 2026 #5:LM"))
 
 
-if __name__ == "__main__":
-    unittest.main()
+class GoalsTest(TempDirTest):
+    def setUp(self):
+        super().setUp()
+        self._path = goals.GOALS_PATH
+        goals.GOALS_PATH = self.tmp / "goals.json"
+
+    def tearDown(self):
+        goals.GOALS_PATH = self._path
+        super().tearDown()
+
+    def test_set_get_clear(self):
+        self.assertIsNone(goals.get("Monza", "296"))
+        goals.set_goal("Monza", "296", 106.5)
+        self.assertEqual(goals.get("Monza", "296"), 106.5)
+        self.assertEqual(goals.all_goals(), {("Monza", "296", "Monza"): 106.5})
+        goals.set_goal("Silverstone", "296", 120.0, "Silverstone - ELMS")      # un objetivo por trazado
+        self.assertIsNone(goals.get("Silverstone", "296", "Silverstone - WEC"))
+        self.assertEqual(goals.get("Silverstone", "296", "Silverstone - ELMS"), 120.0)
+        goals.clear("Monza", "296")
+        self.assertIsNone(goals.get("Monza", "296"))
+
+    def test_parse_and_speech(self):
+        self.assertEqual(goals.parse_time("1:46.5"), 106.5)
+        self.assertEqual(goals.parse_time("1:46,250"), 106.25)
+        self.assertEqual(goals.parse_time("98.7"), 98.7)
+        self.assertIsNone(goals.parse_time("abc"))
+        self.assertEqual(goals.spoken_gap(-0.1), "Objetivo conseguido")
+        self.assertEqual(goals.spoken_gap(0.3), "Te faltan tres décimas para tu objetivo")
+
+
+class ConfigTest(TempDirTest):
+    def setUp(self):
+        super().setUp()
+        self._path = config.CONFIG_PATH
+        config.CONFIG_PATH = self.tmp / "config.json"
+
+    def tearDown(self):
+        config.CONFIG_PATH = self._path
+        super().tearDown()
+
+    def test_defaults_and_messages(self):
+        cfg = config.load_config()
+        self.assertTrue(config.msg_on(cfg, "spot_left"))
+        self.assertFalse(config.msg_on(cfg, "spot_still"))          # desactivado de fábrica
+        cfg["msgs"]["spot_left"] = False
+        cfg["spot_side"] = 3.0
+        config.save_config(cfg)
+        again = config.load_config()
+        self.assertFalse(config.msg_on(again, "spot_left"))
+        self.assertEqual(again["spot_side"], 3.0)
+        self.assertTrue(config.msg_on(again, "no_existe"))           # fuera del catálogo: siempre
+
+    def test_every_message_key_is_unique_and_grouped(self):
+        keys = [m.key for m in config.MESSAGES]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertTrue(all(m.group in config.GROUPS for m in config.MESSAGES))
 
 
 class LogTest(TempDirTest):
@@ -159,3 +213,7 @@ class LogTest(TempDirTest):
             L.log.removeHandler(h)
             h.close()
             L.LOG_DIR = old_dir
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -227,5 +227,26 @@ class StintTest(unittest.TestCase):
         self.assertEqual(sum(s.laps for s in plan.stints), plan.total_laps)
 
 
+class OverviewTest(unittest.TestCase):
+    def test_progress_per_track_and_car(self):
+        from lmu_coach import lapstats
+        from lmu_coach.sessions import SessionInfo
+
+        def ses(day, times, car="296", imported=False):
+            laps = [[i + 1, t, True, t / 3, t / 3, t / 3, ""] for i, t in enumerate(times)]
+            return SessionInfo(f"{day}.duckdb", 0, 0, "Monza", "", car, "GT3", "Libres", f"{day} 20:00", "",
+                               len(times), len(times), min(times), 1, imported=imported, lap_list=laps)
+
+        sessions = [ses("2026-10-01", [110, 109]), ses("2026-10-05", [108, 107.5]), ses("2026-10-06", [107]),
+                    ses("2026-10-06", [100], imported=True), ses("2026-10-02", [120], car="911")]
+        out = lapstats.overview(sessions)
+        self.assertEqual([(c.car, c.days) for c in out], [("296", 3), ("911", 1)])
+        c = out[0]
+        self.assertEqual((c.best, c.first_best, c.laps, c.last_day), (107, 109, 5, "2026-10-06"))
+        self.assertAlmostEqual(c.gained, 2.0)
+        self.assertAlmostEqual(c.last_week_gain, 2.0)
+        self.assertIsNone(out[1].last_week_gain)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@ import argparse
 import threading
 import time
 
-from . import corners, training
+from . import corners, goals, training
 from .engineer import Engineer
 from .spotter import DamageWatch, Spotter
 from .coach import LiveCoach
@@ -96,6 +96,7 @@ class App:
         self._spoken = set()          # avisos ya dichos en esta vuelta (frenadas, invalidación…)
         self._last_fb = None
         self.ref_key = None
+        self.goal = None              # objetivo de tiempo con este coche y circuito (Mi progreso)
         self.ref_time = None
         self.ref_pinned = False
         self.lap_flash = None   # resultado de la última vuelta, se muestra en grande unos segundos
@@ -276,6 +277,7 @@ class App:
                                                     for f in self.plan), "#ffb020", 6)
         self._spoken_corner = lambda z: corners.spoken(z, track, layout)
         self._corner_ctx = (track, layout)
+        self.goal = None if self.demo else goals.get(track, self.ref_key[1] if self.ref_key else lap.car, layout)
         self.ref_time = lap.lap_time
 
     def _on_lap(self, lap, lap_time, valid, reason):
@@ -575,6 +577,19 @@ class App:
             self._say("lap", f"Nueva mejor vuelta. {t}{gain}", kind="lap", prio=2, ttl=8)
         else:
             self._say("lap", f"{t}. Más {gap_es(lap_time - self.ref_time)}", kind="lap", prio=2, ttl=8)
+        self._goal_check(lap_time)
+
+    def _goal_check(self, lap_time):
+        """Frente a tu objetivo: solo si la vuelta anda cerca (una vuelta con tráfico no aporta nada)."""
+        if not self.goal:
+            return
+        gap = lap_time - self.goal
+        if gap <= 0:
+            self.overlay.toast("🎯 ¡Objetivo conseguido!", "#2ecc71", 8)
+            self._say("goal", goals.spoken_gap(gap), kind="goal", prio=2, ttl=12)
+            self.goal = None          # dicho una vez; el siguiente se fija en Mi progreso
+        elif gap < 2.0:
+            self._say("goal", goals.spoken_gap(gap), kind="goal", prio=1, ttl=12)
 
 
 
