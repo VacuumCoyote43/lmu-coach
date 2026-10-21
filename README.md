@@ -38,6 +38,14 @@ python -m lmu_coach            # solo el overlay del coach
 python -m lmu_coach --demo     # overlay con un coche simulado
 ```
 
+Pruebas (no necesitan nada más que Python; las de sesiones reales y la ventana solo se ejecutan si el PC tiene telemetría de LMU, y `build.bat` las pasa antes de generar el instalador):
+
+```
+python -m unittest discover -s tests -t .
+```
+
+Si algo falla en la app o en el coach, los errores quedan en `%LOCALAPPDATA%\LMU Coach\logs` (`app.log` y `coach.log`); en la app, **🩺 Diagnóstico → 📄 Abrir registro**.
+
 Atajos (usan Python 3.12 instalado para el usuario):
 
 | | |

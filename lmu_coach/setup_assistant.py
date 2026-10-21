@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import analysis, lapstats
+from .log import log
 
 WHEELBASE = 2.7          # m (aprox. GT3/LMDh; solo afecta a la escala, no a la comparación entre fases)
 MIN_LAT_G = 0.5          # solo se mide el equilibrio en apoyo
@@ -376,6 +377,7 @@ def _history(setup, own_infos) -> list:
         try:
             st = lapstats.read_setup_file(s.path)
         except Exception:
+            log.warning("Asistente: no se pudo leer el reglaje de %s", getattr(s, "path", "?"), exc_info=True)
             continue
         for key, (_, val) in st.items():
             cat, _, _ = lapstats.setup_label(key)

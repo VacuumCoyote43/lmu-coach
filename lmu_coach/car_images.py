@@ -77,7 +77,7 @@ class CarImages:
                 cars = json.loads(r.read().decode("utf-8"))
             new = {c["desc"]: _stem(c["vehFile"]) for c in cars if c.get("desc") and c.get("vehFile")}
         except Exception:
-            return False
+            return False         # LMU cerrado: lo normal, no es un error
         if not new:
             return False
         with self._lock:

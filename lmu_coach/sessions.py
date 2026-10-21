@@ -17,6 +17,7 @@ import duckdb
 import numpy as np
 
 from .laps import Lap
+from .log import log
 
 DEFAULT_LMU_DIR = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Le Mans Ultimate")
 RATE = 50.0  # Hz al que remuestreamos cada vuelta
@@ -176,6 +177,7 @@ def read_session_info(path: Path, imported: bool = False) -> SessionInfo:
         finally:
             con.close()
     except Exception as e:  # archivo en uso por el juego o corrupto
+        log.warning("No se pudo leer la sesión %s: %s", path, e)
         return SessionInfo(**base, track="?", layout="", car="?", car_class="", session_type="",
                            recorded="", weather="", laps=0, valid_laps=0, best=0.0, best_lap=0,
                            error=f"{type(e).__name__}: {e}"[:200])
@@ -239,6 +241,7 @@ class SessionIndex:
             try:
                 self.last_sync = archive.sync(self.dir, self.archive_dir, progress)
             except Exception as e:      # la copia nunca debe impedir ver las sesiones
+                log.error("Fallo al copiar las sesiones de LMU", exc_info=True)
                 self.last_sync = {"copied": 0, "bytes": 0, "error": str(e), "dir": str(self.archive_dir)}
         if stage:
             stage("Leyendo sesiones")
@@ -345,6 +348,7 @@ class SessionData:
                 t = self.t0 + np.arange(len(vals)) / float(self._freqs[table])
                 out = (t, vals)
             except Exception as e:  # no romper la pestaña, pero dejar constancia del motivo
+                log.warning("Canal %s ilegible en %s", table, self.info.path, exc_info=True)
                 self.channel_errors[table] = f"{type(e).__name__}: {e}"
                 out = None
             finally:

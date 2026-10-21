@@ -13,6 +13,7 @@ from .speech import RATES, Speaker, VoiceQueue, gap_es, lap_time_es
 from .overlay import AMBER, MUTED, Overlay
 from .paths import CONFIG_PATH, DEMO_LAPS_DIR, INDEX_PATH, LAPS_DIR
 from .reader import DemoReader, LMUReader
+from .log import log, warn_once
 
 DEFAULT_CONFIG = {"x": 60, "y": 60, "opacity": 0.93, "beep_on_brake": False, "voice": True,
                   "voice_name": None, "voice_rate": 1.2,
@@ -49,7 +50,7 @@ def find_reference(store: LapStore, track: str, car: str, use_history=True):
                 info, _ = hit
                 return SessionData(info).to_coach_lap(info.best_lap), "histórico"
         except Exception:
-            pass  # sin índice o archivo ilegible: seguimos con lo que haya
+            log.warning("No se pudo cargar la referencia del histórico", exc_info=True)  # seguimos con lo que haya
     return best, "mejor vuelta"
 
 
@@ -116,6 +117,8 @@ class App:
         self._beeped_zone = None
 
     def run(self):
+        self.overlay.root.report_callback_exception = (
+            lambda t, v, tb: log.error("Error en el coach", exc_info=(t, v, tb)))
         self.overlay.root.after(self.POLL_MS, self._tick)
         self.overlay.root.mainloop()
 
@@ -274,7 +277,7 @@ class App:
             c = history_consumption(own_sessions(idx.sessions, track, car), max_sessions=6)
             self.hist_fuel, self.hist_ve = c.fuel, c.ve
         except Exception:
-            pass
+            log.warning("No se pudo leer el consumo histórico", exc_info=True)
         try:
             from .lapstats import brake_baseline
             from .paths import IMPORTED_DIR
@@ -283,7 +286,7 @@ class App:
             mine = [i for i in idx.sessions if not i.imported and not i.error and i.car == car]
             self.brake_base = brake_baseline(mine)
         except Exception:
-            pass
+            log.warning("No se pudieron leer las temperaturas de freno habituales", exc_info=True)
 
     def _learn_consumption(self, reason):
         s = self._cur
@@ -385,6 +388,7 @@ class App:
             x, y = int(self.cfg.get("x", 60)), int(self.cfg.get("y", 60))
             mine = monitor_at(x + 150, y + 20)
         except Exception:
+            warn_once("pantallas", "No se pudo comprobar en qué monitor está el juego")
             return True
         # ¿la posición guardada cae dentro de algún monitor? (si se desconectó uno, el coach quedaría fuera)
         visible = bool(mine) and mine[0] <= x + 150 < mine[2] and mine[1] <= y + 20 < mine[3]
@@ -414,6 +418,7 @@ class App:
         try:
             info = self.reader.race_info()
         except Exception:
+            warn_once("clasificacion", "No se pudo leer la clasificación en directo")
             return
         if info is None:
             return
@@ -436,6 +441,7 @@ class App:
             try:
                 f = self.reader.spotter_frame() if hasattr(self.reader, "spotter_frame") else None
             except Exception:
+                warn_once("spotter", "No se pudo leer la posición de los coches para el spotter")
                 f = None
             if f is not None:
                 msg = self.spotter.update(f, now)
@@ -446,6 +452,7 @@ class App:
             try:
                 d = self.reader.damage() if hasattr(self.reader, "damage") else None
             except Exception:
+                warn_once("danos", "No se pudieron leer los daños del coche")
                 d = None
             if d is not None:
                 for msg in self.damage.update(d, now):
@@ -532,6 +539,8 @@ class App:
 
 
 def main(argv=None):
+    from .log import setup
+    setup("coach")
     ap = argparse.ArgumentParser(description="LMU Coach: delta y avisos de frenada en directo")
     ap.add_argument("--demo", action="store_true", help="usa un coche simulado (sin el juego)")
     ap.add_argument("--demo-speed", type=float, default=1.0, help="acelera la simulación demo")

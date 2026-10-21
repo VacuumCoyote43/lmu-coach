@@ -15,6 +15,7 @@ from .. import corners
 from .. import lapstats as ls
 from ..laps import fmt_time
 from . import theme
+from ..log import log
 
 RIGHT = Qt.AlignRight | Qt.AlignVCenter
 
@@ -75,6 +76,7 @@ class _HistoryWorker(QThread):
         try:
             self.done.emit(ls.history_consumption(self.infos))
         except Exception:
+            log.warning("No se pudo calcular el consumo histórico", exc_info=True)
             self.done.emit(None)
 
 

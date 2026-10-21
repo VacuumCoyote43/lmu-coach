@@ -62,12 +62,15 @@ class DiagnosticsDialog(QDialog):
         pick.clicked.connect(self._pick)
         again = QPushButton("⟳  Volver a comprobar")
         again.clicked.connect(self.refresh)
+        logs = QPushButton("📄  Abrir registro")
+        logs.setToolTip("Abre la carpeta con los registros de errores de la app y del coach")
+        logs.clicked.connect(self._open_logs)
         copy = QPushButton("📋  Copiar informe")
         copy.setToolTip("Copia el resultado para enviarlo por WhatsApp/Discord")
         copy.clicked.connect(self._copy)
         close = QPushButton("Cerrar")
         close.clicked.connect(self.accept)
-        for b in (pick, again, copy):
+        for b in (pick, again, logs, copy):
             row.addWidget(b)
         row.addStretch(1)
         row.addWidget(close)
@@ -106,6 +109,12 @@ class DiagnosticsDialog(QDialog):
         if pick_lmu_dir(self):
             self.lmu_dir_changed.emit()
             self.refresh()
+
+    def _open_logs(self):
+        import os
+        from ..log import LOG_DIR
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        os.startfile(str(LOG_DIR))
 
     def _copy(self):
         QApplication.clipboard().setText(diagnostics.report(self.checks))

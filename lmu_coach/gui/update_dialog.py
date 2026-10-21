@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 from .. import updater
 from ..paths import FROZEN, load_settings, save_settings
 from ..version import __version__
+from ..log import log
 
 
 class CheckWorker(QThread):
@@ -18,7 +19,7 @@ class CheckWorker(QThread):
         try:
             rel = updater.check()
         except Exception:
-            return
+            return               # sin internet: no es un error
         if rel and load_settings().get("skip_version") != rel.version:
             self.found.emit(rel)
 
@@ -38,6 +39,7 @@ class _DownloadWorker(QThread):
             path = updater.download(self.rel, lambda d, t: self.progress.emit(d, t), lambda: self.cancel)
             self.done.emit(str(path))
         except Exception as e:
+            log.warning("No se pudo descargar la actualización", exc_info=True)
             self.failed.emit(str(e))
 
 

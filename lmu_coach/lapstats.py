@@ -9,6 +9,7 @@ import duckdb
 import numpy as np
 
 from . import analysis
+from .log import log
 
 WHEELS = ("DI", "DD", "TI", "TD")         # delantera izq./dcha., trasera izq./dcha. (orden de LMU)
 KPA_PER_PSI = 6.894757
@@ -298,6 +299,7 @@ def brake_baseline(infos, max_sessions=6):
             finally:
                 con.close()
         except Exception:
+            log.warning("Temperaturas de freno: no se pudo leer %s", info.path, exc_info=True)
             continue
         if row and row[0] and row[1]:
             fr.append(row[0])

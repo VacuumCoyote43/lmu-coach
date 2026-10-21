@@ -96,6 +96,12 @@ def run() -> list[Check]:
         checks.append(Check(None, "Actualizaciones", "No se pudo comprobar (¿sin conexión a internet?)"))
     checks.append(Check(None, "App", f"LMU Coach {APP_VERSION} · {'instalada' if FROZEN else 'desarrollo'} · "
                                      f"datos en {DATA_DIR} · Windows {platform.version()}"))
+    from .log import LOG_DIR, recent_problems
+    n = recent_problems(24)
+    checks.append(Check(True if n == 0 else None, "Registro de errores",
+                        "Sin errores ni avisos en las últimas 24 h" if n == 0 else
+                        f"{n} errores o avisos en las últimas 24 h. Si algo falla, pásale a quien te ayude los "
+                        f"archivos de {LOG_DIR} («📄 Abrir registro»)"))
     return checks
 
 

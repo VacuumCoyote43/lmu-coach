@@ -43,6 +43,8 @@ def _import_in_background(app, name):
 
 
 def main():
+    from ..log import setup
+    setup("app")
     app = QApplication(sys.argv)
     app.setApplicationName("LMU Coach")
     app.setWindowIcon(QIcon(str(ASSETS_DIR / "icon.png")))
