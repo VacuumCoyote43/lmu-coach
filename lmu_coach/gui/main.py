@@ -1,4 +1,5 @@
 """Ventana principal: barra de herramientas, lista de sesiones, vista de sesión y lanzador del modo coach."""
+import os
 import sys
 from pathlib import Path
 
@@ -81,6 +82,10 @@ class MainWindow(QMainWindow):
         self.backup_btn.setToolTip("Copia propia de tus sesiones (no se pierden aunque LMU las borre)")
         self.backup_btn.clicked.connect(self._show_backup)
         tb.addWidget(self.backup_btn)
+        self.settings_btn = QPushButton("⚙  Ajustes")
+        self.settings_btn.setToolTip("Voz, overlay y qué dice el coach: spotter, ingeniero, coach y coche")
+        self.settings_btn.clicked.connect(lambda: self.show_settings())
+        tb.addWidget(self.settings_btn)
         self.diag_btn = QPushButton("🩺  Diagnóstico")
         self.diag_btn.setToolTip("Comprueba por qué no se cargan datos de LMU y permite elegir la carpeta del juego")
         self.diag_btn.clicked.connect(lambda: self.show_diagnostics())
@@ -185,6 +190,8 @@ class MainWindow(QMainWindow):
         if self._pending_imports:
             files, self._pending_imports = self._pending_imports, []
             QTimer.singleShot(0, lambda: self.import_files(files))
+        elif self._welcome_pending():
+            QTimer.singleShot(300, self.show_welcome)
         elif not any(not s.imported and not s.error for s in sessions) and not self._diag_auto_shown:
             # Sin ninguna sesión propia: casi siempre es la carpeta o la grabación de telemetría de LMU
             self._diag_auto_shown = True
@@ -202,6 +209,29 @@ class MainWindow(QMainWindow):
     def _show_update(self):
         if self._release:
             UpdateDialog(self, self._release).exec()
+
+    # --- ajustes y bienvenida -------------------------------------------------
+
+    def show_settings(self, tab: str | None = None):
+        from .settings_dialog import SettingsDialog
+        dlg = SettingsDialog(self, tab)
+        dlg.archive_requested.connect(self._show_backup)
+        dlg.wizard_requested.connect(lambda: (dlg.accept(), QTimer.singleShot(0, self.show_welcome)))
+        dlg.exec()
+
+    def _welcome_pending(self):
+        from .welcome import needs_welcome
+        if os.environ.get("LMU_COACH_NO_WELCOME") or getattr(self, "_welcome_shown", False):
+            return False
+        return needs_welcome()
+
+    def show_welcome(self):
+        from .welcome import WelcomeWizard
+        self._welcome_shown = True
+        wiz = WelcomeWizard(self)
+        wiz.lmu_dir_changed.connect(self._lmu_dir_changed)
+        wiz.archive_changed.connect(self._archive_changed)
+        wiz.exec()
 
     # --- diagnóstico ------------------------------------------------------
 

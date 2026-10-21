@@ -108,21 +108,29 @@ class SessionView(QWidget):
 
         self.charts = TelemetryCharts()
         self.replay = ReplayView()
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self.charts, "📈  Gráficas")
-        self.tabs.addTab(self.replay, "▶  Repetición")
         self.fuel_tab = FuelTab()
         self.setup_tab = SetupTab()
         self.cons_tab = ConsistencyTab()
         self.tyres_tab = TyresTab()
-        self.tabs.addTab(self.fuel_tab, "⛽  Combustible y estrategia")
-        self.tabs.addTab(self.setup_tab, "🔧  Reglaje")
-        self.tabs.addTab(self.cons_tab, "🎯  Consistencia")
-        self.tabs.addTab(self.tyres_tab, "🛞  Neumáticos y frenos")
         self.pace_tab = PaceTab()
-        self.tabs.addTab(self.pace_tab, "📉  Ritmo y relevos")
         self.assistant_tab = AssistantTab()
-        self.tabs.addTab(self.assistant_tab, "🧠  Asistente de reglaje")
+        # tres grupos (la vuelta, la carrera y el coche), cada uno con sus pestañas
+        self.tabs = QTabWidget()
+        self.groups = []
+        for title, pages in (
+                ("🏁  Vuelta", [(self.charts, "📈  Gráficas"), (self.replay, "▶  Repetición"),
+                               (self.cons_tab, "🎯  Consistencia")]),
+                ("📊  Carrera", [(self.pace_tab, "📉  Ritmo y relevos"),
+                                (self.fuel_tab, "⛽  Combustible y estrategia")]),
+                ("🔧  Coche", [(self.tyres_tab, "🛞  Neumáticos y frenos"), (self.setup_tab, "🔧  Reglaje"),
+                              (self.assistant_tab, "🧠  Asistente de reglaje")])):
+            inner = QTabWidget()
+            inner.setDocumentMode(True)
+            for w, label in pages:
+                inner.addTab(w, label)
+            inner.currentChanged.connect(lambda _i: self._page_changed())
+            self.tabs.addTab(inner, title)
+            self.groups.append(inner)
         self._loaded_tabs = set()
         self._stats_cache = {}
         split.addWidget(self.tabs)
@@ -154,7 +162,7 @@ class SessionView(QWidget):
         self.zones.cellDoubleClicked.connect(self._rename_zone)
         self.charts.cursor_moved.connect(self.map.set_cursor)
         self.replay.position_changed.connect(self._replay_moved)
-        self.tabs.currentChanged.connect(self._tab_changed)
+        self.tabs.currentChanged.connect(lambda _i: self._page_changed())
         self.pin_btn.clicked.connect(self._pin)
         self.unpin_btn.clicked.connect(self._unpin)
         self.export_btn.clicked.connect(self._export)
@@ -195,7 +203,7 @@ class SessionView(QWidget):
         self._fill_compare()
         self._fill_laps()
         self._update_coach_ref()
-        self._tab_changed(self.tabs.currentIndex())  # si hay abierta una pestaña de análisis, recalcularla
+        self._page_changed()  # si hay abierta una pestaña de análisis, recalcularla
 
     def _fill_laps(self):
         laps = self.sd.laps
@@ -540,8 +548,19 @@ class SessionView(QWidget):
             self._stats_cache[key] = lapstats.lap_stats(self.sd)
         return self._stats_cache[key]
 
-    def _tab_changed(self, i):
-        w = self.tabs.widget(i)
+    def all_pages(self):
+        """[(grupo, pestaña)] de todas las pestañas de análisis (para recorrerlas)."""
+        return [(g, i) for g in range(self.tabs.count()) for i in range(self.groups[g].count())]
+
+    def show_page(self, group: int, index: int):
+        self.tabs.setCurrentIndex(group)
+        self.groups[group].setCurrentIndex(index)
+
+    def _page_changed(self):
+        g = self.tabs.currentIndex()
+        if not 0 <= g < len(self.groups):      # aún montando las pestañas
+            return
+        w = self.groups[g].currentWidget()
         if w is self.replay:
             self.replay.setFocus()
         if not self.sd or w in self._loaded_tabs:

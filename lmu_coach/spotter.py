@@ -22,8 +22,18 @@ class SpotFrame:
     others: list           # [(x, z, velocidad m/s)]
 
 
+# texto de cada aviso (la clave es la del catálogo de mensajes de config.py)
+TEXT = {"spot_left": "Izquierda", "spot_right": "Derecha", "spot_middle": "En medio", "spot_clear": "Libre",
+        "spot_ready": "Spotter listo"}
+
+
 class Spotter:
-    def __init__(self):
+    """update() devuelve (clave, frase) o None; quién lo usa decide si se dice (mensajes activados)."""
+
+    def __init__(self, car_len=CAR_LEN, side_max=SIDE_MAX, min_gap=MIN_GAP_S, still_s=4.0):
+        self.car_len, self.side_max, self.min_gap, self.still_s = car_len, side_max, min_gap, still_s
+        self._ready_said = False
+        self._still_at = 0.0
         self.calib = 0.0          # >0: el eje candidato es la derecha; <0: es la izquierda
         self.prev_fwd = None
         self.left = self.right = False
@@ -36,7 +46,17 @@ class Spotter:
     def calibrated(self) -> bool:
         return abs(self.calib) >= CALIB_NEEDED
 
-    def update(self, f: SpotFrame, now: float | None = None) -> str | None:
+    def configure(self, car_len=None, side_max=None, min_gap=None, still_s=None):
+        if car_len:
+            self.car_len = float(car_len)
+        if side_max:
+            self.side_max = max(SIDE_MIN + 0.5, float(side_max))
+        if min_gap is not None:
+            self.min_gap = float(min_gap)
+        if still_s:
+            self.still_s = float(still_s)
+
+    def update(self, f: SpotFrame, now: float | None = None) -> tuple[str, str] | None:
         now = time.monotonic() if now is None else now
         vx, vz = f.vel
         speed = math.hypot(vx, vz)
@@ -56,13 +76,17 @@ class Spotter:
         if not self.calibrated:
             self.state = None
             return None
+        if not self._ready_said:
+            self._ready_said = True
+            self.last_msg = now
+            return "spot_ready", TEXT["spot_ready"]
         right = cand if self.calib > 0 else (-cand[0], -cand[1])
         left_now = right_now = False
         for x, z, v in f.others:
             dx, dz = x - f.me[0], z - f.me[1]
             lon = dx * fwd[0] + dz * fwd[1]
             lat = dx * right[0] + dz * right[1]
-            if abs(lon) < CAR_LEN and SIDE_MIN < abs(lat) < SIDE_MAX and v > 5:
+            if abs(lon) < self.car_len and SIDE_MIN < abs(lat) < self.side_max and v > 5:
                 if lat > 0:
                     right_now = True
                 else:
@@ -71,24 +95,31 @@ class Spotter:
         self.state = {"left": left_now, "right": right_now}
         return self._message(now)
 
-    def _message(self, now) -> str | None:
-        """Frase al cambiar el estado (con un poco de margen para que no parpadee)."""
+    def _message(self, now) -> tuple[str, str] | None:
+        """Aviso al cambiar el estado (con un poco de margen para que no parpadee) y, mientras siga
+        igual, el recordatorio «sigue ahí»."""
         cur = (self.left, self.right)
-        if cur == self._shown or now - self.last_msg < MIN_GAP_S:
+        if now - self.last_msg < self.min_gap:
+            return None
+        if cur == self._shown:
+            if any(cur) and now - self._still_at >= self.still_s:
+                self._still_at = now
+                side = "en medio" if all(cur) else "a la izquierda" if cur[0] else "a la derecha"
+                return "spot_still", ("Sigues " if all(cur) else "Sigue ") + side
             return None
         before = self._shown
         self._shown = cur
-        self.last_msg = now
+        self.last_msg = self._still_at = now
         if cur == (True, True):
-            return "En medio"
+            return "spot_middle", TEXT["spot_middle"]
         if cur == (True, False) and not before[0]:
-            return "Izquierda"
+            return "spot_left", TEXT["spot_left"]
         if cur == (False, True) and not before[1]:
-            return "Derecha"
+            return "spot_right", TEXT["spot_right"]
         if cur == (False, False):
-            return "Libre"
+            return "spot_clear", TEXT["spot_clear"]
         if before == (True, True):    # de tres en paralelo a uno solo al lado
-            return "Libre a la izquierda" if cur[1] else "Libre a la derecha"
+            return "spot_clear_side", "Libre a la izquierda" if cur[1] else "Libre a la derecha"
         return None
 
 
@@ -111,7 +142,8 @@ class DamageWatch:
         self.overheat_said = 0.0
         self.state = None
 
-    def update(self, d: dict, now: float | None = None) -> list[str]:
+    def update(self, d: dict, now: float | None = None) -> list[tuple[str, str]]:
+        """[(clave, frase)] de los daños nuevos."""
         now = time.monotonic() if now is None else now
         out = []
         dents = list(d["dents"])
@@ -120,20 +152,20 @@ class DamageWatch:
         worse = sum(dents) > sum(self.dents)
         if worse:
             level = max(dents)
-            out.append("Daños fuertes en la carrocería" if level >= 2 else "Daños en la carrocería")
+            out.append(("dmg_body", "Daños fuertes en la carrocería" if level >= 2 else "Daños en la carrocería"))
         self.dents = dents
         if d["detached"] and not self.detached:
-            out.append("Has perdido alguna pieza")
+            out.append(("dmg_part", "Has perdido alguna pieza"))
         self.detached = d["detached"]
         for i in range(4):
             if d["wheel_off"][i] and not self.wheel_off[i]:
-                out.append(f"Has perdido la rueda {WHEEL_NAMES[i]}")
+                out.append(("dmg_tyre", f"Has perdido la rueda {WHEEL_NAMES[i]}"))
             elif d["flat"][i] and not self.flat[i]:
-                out.append(f"Pinchazo {WHEEL_NAMES[i]}")
+                out.append(("dmg_tyre", f"Pinchazo {WHEEL_NAMES[i]}"))
         self.flat, self.wheel_off = list(d["flat"]), list(d["wheel_off"])
         if d["overheating"] and now - self.overheat_said > 60:
             self.overheat_said = now
-            out.append("Motor sobrecalentado")
+            out.append(("dmg_engine", "Motor sobrecalentado"))
         level = max(dents) if dents else 0
         self.state = {"level": level, "detached": self.detached, "flat": any(self.flat) or any(self.wheel_off),
                       "overheating": bool(d["overheating"])}

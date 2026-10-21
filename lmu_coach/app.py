@@ -1,6 +1,5 @@
 """Modo coach: une lector, grabador, coach y overlay."""
 import argparse
-import json
 import threading
 import time
 
@@ -11,29 +10,12 @@ from .coach import LiveCoach
 from .laps import LapRecorder, LapStore, Reference, fmt_time, save_async
 from .speech import RATES, Speaker, VoiceQueue, gap_es, lap_time_es
 from .overlay import AMBER, MUTED, Overlay
-from .paths import CONFIG_PATH, DEMO_LAPS_DIR, INDEX_PATH, LAPS_DIR
+from .config import DEFAULT_CONFIG, config_mtime, load_config, msg_on, save_config  # noqa: F401
+from .paths import DEMO_LAPS_DIR, INDEX_PATH, LAPS_DIR
 from .reader import DemoReader, LMUReader
 from .log import log, warn_once
 
-DEFAULT_CONFIG = {"x": 60, "y": 60, "opacity": 0.93, "beep_on_brake": False, "voice": True,
-                  "voice_name": None, "voice_rate": 1.2,
-                  "temps": True, "engineer": True,
-                  "spotter": True}
 LAP_FLASH_SECONDS = 6.0
-
-
-def load_config() -> dict:
-    cfg = dict(DEFAULT_CONFIG)
-    try:
-        cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass
-    return cfg
-
-
-def save_config(cfg: dict):
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 
 
 def find_reference(store: LapStore, track: str, car: str, use_history=True):
@@ -60,8 +42,10 @@ def beep():
 
 
 # prioridad (más alta, antes) y caducidad (s) de cada aviso del ingeniero
-ENGINEER_PRIO = {"close": 3, "position": 2, "pit": 1, "fastclass": 3, "end": 2}
-ENGINEER_TTL = {"close": 3, "position": 6, "pit": 8, "fastclass": 3, "end": 20}
+ENGINEER_PRIO = {"close": 3, "position": 2, "pit": 1, "fastclass": 3, "end5": 2, "lastlap": 2, "flag": 3,
+                 "pitwindow": 2}
+ENGINEER_TTL = {"close": 3, "position": 6, "pit": 8, "fastclass": 3, "end5": 20, "lastlap": 20, "flag": 6,
+                "pitwindow": 15}
 
 
 class _Z:
@@ -100,6 +84,8 @@ class App:
         self._place_next = 0.0
         self.engineer = Engineer()
         self.spotter = Spotter()
+        self._cfg_mtime = config_mtime()
+        self._cfg_next = 0.0
         self.damage = DamageWatch()
         self._spot_next = self._damage_next = 0.0
         self._summary_due = None
@@ -115,6 +101,52 @@ class App:
         self.lap_flash = None   # resultado de la última vuelta, se muestra en grande unos segundos
         self._last_et = None
         self._beeped_zone = None
+        self._apply_config()
+
+    # --- configuración (la ventana de Ajustes de la app la cambia mientras el coach está abierto) ----
+
+    def _apply_config(self):
+        c = self.cfg
+        self.spotter.configure(c.get("spot_len"), c.get("spot_side"), c.get("spot_gap"), c.get("spot_still_s"))
+        self.engineer.configure(c.get("eng_close_s"), c.get("eng_fast_s"), c.get("eng_summary_every"))
+        self.speaker.enabled = bool(c.get("voice", True))
+        if c.get("voice_name") and c.get("voice_name") != self.speaker.voice:
+            self.speaker.set_voice(c["voice_name"])
+        rate = float(c.get("voice_rate", 1.2))
+        if rate != self.speaker.rate:
+            self.speaker.set_rate(rate)
+        try:
+            self.overlay.root.attributes("-alpha", float(c.get("opacity", 0.93)))
+            if bool(c.get("temps", True)) != self.overlay.show_temps:
+                self.overlay.set_temps(bool(c.get("temps", True)))
+        except Exception:
+            warn_once("overlay-cfg", "No se pudo aplicar la configuración al overlay")
+
+    def _watch_config(self):
+        """Si el archivo de configuración ha cambiado (Ajustes de la app), recargarlo y aplicarlo."""
+        now = time.monotonic()
+        if now < self._cfg_next:
+            return
+        self._cfg_next = now + 1.0
+        m = config_mtime()
+        if m == self._cfg_mtime:
+            return
+        self._cfg_mtime = m
+        new = load_config()
+        new["x"], new["y"] = self.cfg.get("x", new["x"]), self.cfg.get("y", new["y"])   # la ventana manda
+        self.cfg.clear()
+        self.cfg.update(new)
+        self._apply_config()
+        self.overlay.toast("Ajustes actualizados", MUTED, 2)
+
+    def _save_config(self):
+        save_config(self.cfg)
+        self._cfg_mtime = config_mtime()
+
+    def _say(self, key: str, text: str, **kw):
+        """Dice un mensaje del catálogo si está activado en los ajustes."""
+        if msg_on(self.cfg, key):
+            self.voice.say(text, **kw)
 
     def run(self):
         self.overlay.root.report_callback_exception = (
@@ -123,7 +155,7 @@ class App:
         self.overlay.root.mainloop()
 
     def close(self):
-        save_config(self.cfg)
+        self._save_config()
         self.speaker.close()
         self.reader.close()
         self.overlay.root.destroy()
@@ -137,6 +169,7 @@ class App:
             self.overlay.root.after(self.POLL_MS, self._tick)
 
     def _step(self):
+        self._watch_config()
         if not self._placed and time.monotonic() >= self._place_next:
             self._place_next = time.monotonic() + 3
             self._placed = self._place_on_game_screen()
@@ -202,7 +235,8 @@ class App:
             "fuel": self._fuel_state(s),
             "temps": self._temps_state(s) if self.cfg.get("temps", True) else None,
             "race": self.engineer.state if self.cfg.get("engineer", True) else None,
-            "spot": self.spotter.state if self.cfg.get("spotter", True) else None,
+            "spot": (self.spotter.state if self.cfg.get("spotter", True) and self.cfg.get("spot_overlay", True)
+                     else None),
             "damage": self.damage.state,
         })
 
@@ -323,7 +357,7 @@ class App:
             if v is not None and v < 2.5:
                 n = int(v)
                 amount = "menos de una vuelta" if n < 1 else ("una vuelta" if n == 1 else f"{n} vueltas")
-                self.voice.say(f"{what} para {amount}", kind="fuel", prio=2, ttl=20)
+                self._say("fuel", f"{what} para {amount}", kind="fuel", prio=2, ttl=20)
                 return
 
     # --- voz ---------------------------------------------------------------
@@ -331,6 +365,7 @@ class App:
     def _voice_toggled(self, on):
         self.cfg["voice"] = on
         self.speaker.enabled = on
+        self._save_config()
         if on:
             self.voice.say("Avisos por voz activados", interrupt=True)
 
@@ -374,7 +409,7 @@ class App:
             self._spoken.add(key)
             axle = "delanteros" if min(hot) < 2 else "traseros"
             self.overlay.toast(f"Frenos {axle} muy calientes", "#ff4d4d")
-            self.voice.say(f"Frenos {axle} muy calientes", kind="brakes", prio=2, ttl=8)
+            self._say("brakes", f"Frenos {axle} muy calientes", kind="brakes", prio=2, ttl=8)
 
     def _place_on_game_screen(self):
         """Si el coach está en otro monitor que LMU, lo lleva al del juego (en la misma esquina).
@@ -423,14 +458,14 @@ class App:
         if info is None:
             return
         for msg, kind in self.engineer.update(info):
-            self.voice.say(msg, kind=kind, prio=ENGINEER_PRIO.get(kind, 1), ttl=ENGINEER_TTL.get(kind, 6),
+            self._say(kind, msg, kind=kind, prio=ENGINEER_PRIO.get(kind, 1), ttl=ENGINEER_TTL.get(kind, 6),
                            interrupt=kind in ("close", "fastclass"))   # te van a alcanzar: no puede esperar
         # el resumen de la vuelta, 4 s después de cruzar meta (para no pisar el tiempo de vuelta)
         if self.engineer.pending_summary:
             self._summary_due = (self.engineer.pending_summary, now + 4.0)
             self.engineer.pending_summary = None
         if self._summary_due and now >= self._summary_due[1]:
-            self.voice.say(self._summary_due[0], kind="summary", prio=1, ttl=15)
+            self._say("summary", self._summary_due[0], kind="summary", prio=1, ttl=15)
             self._summary_due = None
 
     def _spot_step(self):
@@ -446,7 +481,7 @@ class App:
             if f is not None:
                 msg = self.spotter.update(f, now)
                 if msg:
-                    self.voice.say(msg, interrupt=True)
+                    self._say(msg[0], msg[1], interrupt=True)
         if now >= self._damage_next:
             self._damage_next = now + 0.5
             try:
@@ -455,22 +490,25 @@ class App:
                 warn_once("danos", "No se pudieron leer los daños del coche")
                 d = None
             if d is not None:
-                for msg in self.damage.update(d, now):
+                for key, msg in self.damage.update(d, now):
                     self.overlay.toast(msg, "#ff4d4d", 6)
-                    self.voice.say(msg, kind="damage", prio=3, ttl=8)
+                    self._say(key, msg, kind="damage", prio=3, ttl=8)
 
     def _spotter_toggled(self, on):
         self.cfg["spotter"] = on
+        self._save_config()
         if not on:
             self.spotter.state = None
 
     def _engineer_toggled(self, on):
         self.cfg["engineer"] = on
+        self._save_config()
         if not on:
             self.engineer.state = None
 
     def _temps_toggled(self, on):
         self.cfg["temps"] = on
+        self._save_config()
         self.overlay.set_temps(on)
 
     def _voice_choices(self):
@@ -480,11 +518,13 @@ class App:
 
     def _voice_chosen(self, name):
         self.cfg["voice_name"] = name
+        self._save_config()
         self.speaker.set_voice(name)
         self._voice_sample()
 
     def _rate_chosen(self, rate):
         self.cfg["voice_rate"] = rate
+        self._save_config()
         self.speaker.set_rate(rate)
         self._voice_sample()
 
@@ -502,14 +542,14 @@ class App:
             if f and key not in self._spoken:
                 self._spoken.add(key)
                 name = corners.name_for(*self._corner_ctx, cue.zone.apex) if self._corner_ctx else None
-                self.voice.say(f"{name or 'Curva ' + str(cue.zone.idx)}: {f.short.replace(' m ', ' metros ')}",
+                self._say("plan", f"{name or 'Curva ' + str(cue.zone.idx)}: {f.short.replace(' m ', ' metros ')}",
                                kind="plan", prio=2, ttl=2.5)
         # «frena» un instante antes del punto de frenada (la voz tarda unas décimas en sonar)
         if cue and not cue.braking and 0 < cue.dist_to <= max(s.speed / 3.6 * 0.45, 8):
             key = ("brake", cue.zone.idx)
             if key not in self._spoken:
                 self._spoken.add(key)
-                self.voice.say("frena", interrupt=True)
+                self._say("brake", "frena", interrupt=True)
         # balance de la frenada que acabas de pasar, si has ganado o perdido algo apreciable
         fb = self.coach.last_feedback
         if fb is not None and fb is not self._last_fb:
@@ -517,24 +557,24 @@ class App:
             if abs(fb.time_diff) >= 0.15:
                 verb = "pierdes" if fb.time_diff > 0 else "ganas"
                 where = self._spoken_corner(fb.zone) if self._spoken_corner else f"en la {fb.zone.idx}"
-                self.voice.say(f"{verb} {gap_es(fb.time_diff)} {where}", kind="corner", prio=1, ttl=4)
+                self._say("corner", f"{verb} {gap_es(fb.time_diff)} {where}", kind="corner", prio=1, ttl=4)
         reason = self.recorder.invalid_reason or ""
         if self.recorder.started_clean and "límites" in reason and "invalid" not in self._spoken:
             self._spoken.add("invalid")
-            self.voice.say("vuelta invalidada", kind="invalid", prio=2, ttl=5)
+            self._say("invalid", "vuelta invalidada", kind="invalid", prio=2, ttl=5)
 
     def _say_lap(self, lap_time, valid, reason):
         if not self.speaker.enabled or not self.recorder.started_clean or lap_time < LapRecorder.MIN_LAP_TIME:
             return
         if not valid:
-            self.voice.say("vuelta no válida", kind="lap", prio=2, ttl=6)
+            self._say("lap", "vuelta no válida", kind="lap", prio=2, ttl=6)
             return
         t = lap_time_es(lap_time)
         if self.ref_time is None or lap_time < self.ref_time:
             gain = f", {gap_es(lap_time - self.ref_time)} mejor" if self.ref_time else ""
-            self.voice.say(f"Nueva mejor vuelta. {t}{gain}", kind="lap", prio=2, ttl=8)
+            self._say("lap", f"Nueva mejor vuelta. {t}{gain}", kind="lap", prio=2, ttl=8)
         else:
-            self.voice.say(f"{t}. Más {gap_es(lap_time - self.ref_time)}", kind="lap", prio=2, ttl=8)
+            self._say("lap", f"{t}. Más {gap_es(lap_time - self.ref_time)}", kind="lap", prio=2, ttl=8)
 
 
 

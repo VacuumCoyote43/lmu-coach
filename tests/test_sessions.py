@@ -76,8 +76,8 @@ class MainWindowTest(unittest.TestCase):
             w._open(SESSIONS[0])
             self.pump(30)
             v = w.view
-            for i in range(v.tabs.count()):
-                v.tabs.setCurrentIndex(i)
+            for g, i in v.all_pages():
+                v.show_page(g, i)
                 self.pump(20)
             v.laps.selectRow(min(2, v.laps.rowCount() - 1))
             self.pump(20)

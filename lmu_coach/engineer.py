@@ -70,8 +70,18 @@ def _num(x: float) -> str:
 
 
 class Engineer:
-    def __init__(self):
+    def __init__(self, close_s=CLOSE_S, fast_s=FAST_CLASS_S, summary_every=1):
+        self.configure(close_s, fast_s, summary_every)
         self.reset()
+
+    def configure(self, close_s=None, fast_s=None, summary_every=None):
+        if close_s:
+            self.close_s = float(close_s)
+            self.close_reset_s = self.close_s + (CLOSE_RESET_S - CLOSE_S)
+        if fast_s:
+            self.fast_s = float(fast_s)
+        if summary_every:
+            self.summary_every = max(1, int(summary_every))
 
     def reset(self):
         self.place = None
@@ -127,10 +137,10 @@ class Engineer:
 
         # coche de tu clase encima
         if behind and g_behind is not None and not behind.in_pits:
-            if g_behind < CLOSE_S and behind.driver not in self.alerted_close and not me.in_pits and me.laps >= 1:
+            if g_behind < self.close_s and behind.driver not in self.alerted_close and not me.in_pits and me.laps >= 1:
                 self.alerted_close.add(behind.driver)
                 out.append((f"Coche detrás a {_num(g_behind)}", "close"))
-            elif g_behind > CLOSE_RESET_S:
+            elif g_behind > self.close_reset_s:
                 self.alerted_close.discard(behind.driver)
 
         # paradas de los rivales directos
@@ -147,14 +157,14 @@ class Engineer:
             if c.cls == me.cls or c.in_pits or not _pace(c) or _pace(c) > lap_t * 0.97:
                 continue
             g = ((_progress(me, L) - _progress(c, L)) * lap_t) % lap_t   # cuánto le falta para alcanzarte
-            if 0 < g < FAST_CLASS_S and now - self.alerted_fast.get(c.driver, 0) > 60:
+            if 0 < g < self.fast_s and now - self.alerted_fast.get(c.driver, 0) > 60:
                 self.alerted_fast[c.driver] = now
                 out.append((f"{c.cls} detrás, déjale sitio", "fastclass"))
                 break
 
         # resumen al empezar cada vuelta
         if me.laps != self.last_lap:
-            if self.last_lap is not None and not me.in_pits:
+            if self.last_lap is not None and not me.in_pits and me.laps % self.summary_every == 0:
                 self.pending_summary = self._lap_summary(pos, len(mine), ahead, behind, g_ahead, g_behind, me.laps)
             self.last_lap = me.laps
             for c, g in ((ahead, g_ahead), (behind, g_behind)):
@@ -165,10 +175,10 @@ class Engineer:
         if info.time_left is not None:
             if 0 < info.time_left <= 300 and not self.said_5min:
                 self.said_5min = True
-                out.append(("Quedan cinco minutos", "end"))
+                out.append(("Quedan cinco minutos", "end5"))
         if info.laps_left == 1 and not self.said_last:
             self.said_last = True
-            out.append(("Última vuelta", "end"))
+            out.append(("Última vuelta", "lastlap"))
 
         self.state = {"pos": pos, "of": len(mine), "cls": me.cls, "ahead": g_ahead, "behind": g_behind,
                       "trend_ahead": self._trend(ahead.driver) if ahead else None,

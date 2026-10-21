@@ -139,7 +139,7 @@ class EngineerTest(unittest.TestCase):
 class SpotterTest(unittest.TestCase):
     def drive_circle(self, mirror):
         """Giro a la derecha en un círculo, con un rival por fuera y otro por dentro; el mundo puede ir espejado."""
-        sp, said = Spotter(), []
+        sp, said, extra = Spotter(still_s=1.5), [], []
         R, v = 150.0, 40.0
         for k in range(400):
             t = k * 0.05
@@ -154,8 +154,11 @@ class SpotterTest(unittest.TestCase):
                     ox, oz = r * math.sin(a), r * math.cos(a)
                     others.append((-ox if mirror else ox, oz, v))
             msg = sp.update(SpotFrame((x, z), (vx, vz), 0.3, others), now=t)
-            if msg:
-                said.append(msg)
+            if msg and msg[0] not in ("spot_ready", "spot_still"):
+                said.append(msg[1])
+            elif msg:
+                extra.append(msg[0])
+        sp.extra = extra
         return sp, said
 
     def test_learns_sides_in_both_conventions(self):
@@ -164,6 +167,17 @@ class SpotterTest(unittest.TestCase):
             self.assertTrue(sp.calibrated)
             self.assertEqual(said[:2], ["Izquierda", "En medio"])
             self.assertEqual(said[-1], "Libre")
+            self.assertEqual(sp.extra[0], "spot_ready")             # avisa una vez de que ya sabe los lados
+            self.assertIn("spot_still", sp.extra)                   # y recuerda que siguen ahí
+
+    def test_configurable_side_distance(self):
+        sp = Spotter(side_max=2.5)
+        sp.calib = 10                                                # ya calibrado
+        sp._ready_said = True
+        f = SpotFrame((0, 0), (40, 0), 0.0, [(0, 3.5, 40)])         # coche a 3,5 m del lateral
+        self.assertIsNone(sp.update(f, now=0))
+        sp.configure(side_max=4.8)
+        self.assertIsNotNone(sp.update(f, now=1))
 
     def test_silent_until_calibrated(self):
         sp = Spotter()
@@ -178,7 +192,7 @@ class DamageTest(unittest.TestCase):
                 "overheating": False}
         self.assertEqual(d.update(base, 0), [])
         hit = dict(base, dents=[0, 2, 0, 0, 0, 0, 0, 0], flat=[False, True, False, False])
-        self.assertEqual(d.update(hit, 1), ["Daños fuertes en la carrocería", "Pinchazo delantera derecha"])
+        self.assertEqual(d.update(hit, 1), [("dmg_body", "Daños fuertes en la carrocería"), ("dmg_tyre", "Pinchazo delantera derecha")])
         self.assertEqual(d.update(hit, 2), [])
         self.assertEqual(d.state["level"], 2)
 
