@@ -1,5 +1,5 @@
 """Pestañas de análisis de la vista de sesión: combustible y estrategia, reglaje, consistencia,
-neumáticos y frenos, ritmo, asistente de reglaje, plan y ranking."""
+neumáticos y frenos, ritmo, asistente de reglaje y plan."""
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QThread, Signal
@@ -705,74 +705,3 @@ class TrainingDialog(QDialog):
     def _clear(self):
         self.training.clear(*self.key)
         self._refresh()
-
-
-# --------------------------------------------------------------------------- ranking
-
-class RankingDialog(QDialog):
-    """Tus tiempos frente a los de las sesiones importadas (mismo circuito y clase)."""
-
-    def __init__(self, parent, sessions, short_track):
-        super().__init__(parent)
-        self.sessions = sessions
-        self.setWindowTitle("Ranking")
-        self.resize(980, 520)
-        lay = QVBoxLayout(self)
-        head = QLabel("🏆  Ranking")
-        head.setObjectName("title")
-        lay.addWidget(head)
-        self.combo = QComboBox()
-        self.groups = ls.ranking_groups(sessions)
-        for t, l, c, n, imp in self.groups:
-            extra = f"  ·  {n} pilotos" if n > 1 else "  ·  solo tú"
-            name = short_track(t) + ("" if l == t else f" ({l.split(' - ')[-1]})")
-            self.combo.addItem(f"{name}  ·  {c}{extra}")
-        self.combo.currentIndexChanged.connect(self._fill)
-        lay.addWidget(self.combo)
-        self.table = _table(["#", "Piloto", "Mejor vuelta", "Dif.", "S1", "S2", "S3", "Ideal", "Coche", "Fecha"],
-                            stretch=8, row_h=28)
-        lay.addWidget(self.table, 1)
-        self.note = _note()
-        lay.addWidget(self.note)
-        if not any(g[3] > 1 for g in self.groups):
-            lay.addWidget(_note("Todavía no hay sesiones importadas de otros pilotos: cuando tu amigo te pase un "
-                                ".lmusession (⬇ Importar sesión), sus tiempos aparecen aquí junto a los tuyos."))
-        self._fill()
-
-    def _fill(self):
-        t = self.table
-        if not self.groups:
-            t.setRowCount(0)
-            return
-        track, layout, cls, _, _ = self.groups[self.combo.currentIndex()]
-        rows = ls.ranking(self.sessions, track, layout, cls)
-        t.setRowCount(len(rows))
-        best_sec = [min((r.sectors[k] for r in rows if r.sectors[k]), default=0) for k in range(3)]
-        lead = rows[0].best if rows else 0
-        for i, r in enumerate(rows):
-            me = theme.ACCENT if r.mine else None
-            t.setItem(i, 0, _it(i + 1, Qt.AlignCenter, theme.PURPLE if i == 0 else None, bold=i == 0))
-            t.setItem(i, 1, _it(("🙋 " if r.mine else "📥 ") + r.driver, color=me, bold=r.mine))
-            t.setItem(i, 2, _it(fmt_time(r.best), RIGHT, theme.PURPLE if i == 0 else None, bold=True))
-            t.setItem(i, 3, _it("—" if i == 0 else f"+{r.best - lead:.3f}", RIGHT, theme.MUTED if i == 0 else theme.RED))
-            for k in range(3):
-                v = r.sectors[k]
-                t.setItem(i, 4 + k, _it(f"{v:.3f}" if v else "—", RIGHT,
-                                        theme.PURPLE if v and v == best_sec[k] and len(rows) > 1 else None))
-            t.setItem(i, 7, _it(fmt_time(r.ideal) if r.ideal else "—", RIGHT, theme.MUTED))
-            t.setItem(i, 8, _it(r.best_car, color=theme.MUTED))
-            t.setItem(i, 9, _it(r.best_date, color=theme.MUTED))
-        mine = next((r for r in rows if r.mine), None)
-        others = [r for r in rows if not r.mine]
-        if mine and others:
-            rival = min(others, key=lambda r: r.best)
-            parts = []
-            for k in range(3):
-                if mine.sectors[k] and rival.sectors[k]:
-                    d = mine.sectors[k] - rival.sectors[k]
-                    parts.append(f"S{k + 1} {'+' if d > 0 else ''}{d:.3f}")
-            verb = "Le sacas" if mine.best < rival.best else "Te saca"
-            self.note.setText(f"{verb} {abs(mine.best - rival.best):.3f} s a {rival.driver}. Por sectores (tú − él): "
-                              + " · ".join(parts) + ". Morado: mejor sector de todos.")
-        else:
-            self.note.setText("Morado: el mejor tiempo y los mejores sectores.")

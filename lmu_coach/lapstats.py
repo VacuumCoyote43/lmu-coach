@@ -517,57 +517,6 @@ def overview(index_sessions) -> list[ComboStats]:
     return out
 
 
-# --------------------------------------------------------------------------- ranking con otros pilotos
-
-@dataclass
-class RankRow:
-    driver: str
-    mine: bool
-    best: float
-    best_car: str
-    best_date: str
-    sectors: list            # mejores S1, S2, S3 (de cualquier vuelta válida)
-    ideal: float | None
-    laps: int                # vueltas válidas
-
-
-def ranking(sessions, track: str, layout: str, car_class: str) -> list[RankRow]:
-    """Tú y los pilotos de las sesiones importadas en ese circuito y clase, del más rápido al más lento."""
-    per = {}
-    for s in sessions:
-        if s.error or s.track != track or s.layout != layout or s.car_class != car_class:
-            continue
-        who = (s.driver or "Importado") if s.imported else "__yo__"
-        r = per.setdefault(who, RankRow(s.driver or "Tú" if not s.imported else (s.driver or "Importado"),
-                                        not s.imported, 0.0, "", "", [0.0, 0.0, 0.0], None, 0))
-        for num, t, ok, s1, s2, s3, _ in s.lap_list:
-            if not ok or t <= 0:
-                continue
-            r.laps += 1
-            if not r.best or t < r.best:
-                r.best, r.best_car, r.best_date = t, s.car, s.recorded
-            for k, v in enumerate((s1, s2, s3)):
-                if v > 0 and (not r.sectors[k] or v < r.sectors[k]):
-                    r.sectors[k] = v
-    rows = [r for r in per.values() if r.best]
-    for r in rows:
-        r.ideal = sum(r.sectors) if all(r.sectors) else None
-    return sorted(rows, key=lambda r: r.best)
-
-
-def ranking_groups(sessions) -> list[tuple[str, str, str, int, bool]]:
-    """(circuito, trazado, clase, nº de pilotos, hay importadas) con vueltas válidas, los compartidos primero."""
-    groups = defaultdict(lambda: [set(), False])
-    for s in sessions:
-        if s.error or not s.best:
-            continue
-        g = groups[(s.track, s.layout, s.car_class)]
-        g[0].add((s.driver or "Importado") if s.imported else "__yo__")
-        g[1] |= s.imported
-    out = [(t, l, c, len(d), imp) for (t, l, c), (d, imp) in groups.items()]
-    return sorted(out, key=lambda g: (-g[3], g[0], g[2]))
-
-
 # --------------------------------------------------------------------------- reglaje
 
 _CAT = {

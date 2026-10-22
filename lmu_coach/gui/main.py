@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
 from . import car_pix, theme
 from .common import IMPORTABLE, short_track
 from .diagnostics_dialog import DiagnosticsDialog
-from .insights import RankingDialog
 from .session_list import SessionList
 from .session_view import SessionView
 from .update_dialog import CheckWorker, UpdateDialog
@@ -87,10 +86,6 @@ class MainWindow(QMainWindow):
         self.progress_btn.setToolTip("Tu evolución en cada circuito y coche, tu vuelta ideal y tus objetivos")
         self.progress_btn.clicked.connect(self._show_progress)
         tb.addWidget(self.progress_btn)
-        self.rank_btn = QPushButton("🏆  Ranking")
-        self.rank_btn.setToolTip("Tus tiempos frente a los de las sesiones importadas de otros pilotos")
-        self.rank_btn.clicked.connect(lambda: RankingDialog(self, self.index.sessions, short_track).exec())
-        tb.addWidget(self.rank_btn)
         self.settings_btn = QPushButton("⚙  Ajustes")
         self.settings_btn.setToolTip("Voz, overlay y qué dice el coach: spotter, ingeniero, coach y coche")
         self.settings_btn.clicked.connect(lambda: self.show_settings())

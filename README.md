@@ -89,7 +89,6 @@ Atajos (usan Python 3.12 instalado para el usuario):
 - **📈 Mi progreso**: todos los circuitos (por trazado) y coches que has corrido, con cuánto has mejorado. Para cada uno, tu mejor vuelta y tu ritmo medio por día, la **vuelta ideal** con tus mejores sectores de todas las sesiones y un **objetivo de tiempo** («bajar de 1:46,0»). En pista, el coach te dice a cuánto estás de tu objetivo al acabar cada vuelta.
 - **📷 Imagen**: guarda una imagen de la sesión tal como la ves y la copia al portapapeles, para pegarla en Discord o WhatsApp.
 - **🎯 Plan de entrenamiento**: las 3 curvas donde más tiempo pierdes en una vuelta normal frente a tu mejor vuelta, con qué cambiar en cada una (punto de frenada, velocidad de paso, cuándo acelerar). Con «Activar en el coach», el coach te recuerda el objetivo al llegar a esas curvas, en pantalla y por voz.
-- **🏆 Ranking**: tus tiempos frente a los de las sesiones importadas de otros pilotos, por circuito y clase, con los mejores sectores de cada uno y dónde os sacáis tiempo.
 - **📌 Usar como referencia del coach**: fija la vuelta seleccionada para que el coach la persiga. Con "Quitar", el coach vuelve a usar tu mejor vuelta.
 
 ![Plan de entrenamiento](docs/img/plan.png)

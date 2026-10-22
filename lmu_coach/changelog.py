@@ -9,6 +9,7 @@ CHANGES = {
         "gráficas (el detalle de cada frenada, al pasar el ratón).",
         "Los grupos Vuelta, Carrera y Coche son ahora botones, para no confundirlos con sus pestañas.",
         "El mapa de la trazada ya no amontona los nombres de las frenadas.",
+        "Se quita el Ranking.",
     ],
     "1.15.0": [
         "El coach te dice por qué pierdes en una curva: «frenas quince metros antes», «aceleras veinte metros tarde»…",
