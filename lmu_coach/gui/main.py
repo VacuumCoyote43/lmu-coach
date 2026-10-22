@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QProcess, QStandardPaths, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QLabel, QMainWindow, QMessageBox, QProgressBar, QPushButton, QSizePolicy, QSplitter,
+    QApplication, QFileDialog, QLabel, QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton, QSizePolicy, QSplitter,
     QStackedWidget, QToolBar, QWidget,
 )
 
@@ -64,12 +64,25 @@ class MainWindow(QMainWindow):
         self.coach_btn.setObjectName("coach")
         self.coach_btn.clicked.connect(self._toggle_coach)
         tb.addWidget(self.coach_btn)
-        self.coach_state = QLabel("El overlay se muestra encima de LMU (modo ventana sin bordes)")
+        self.coach_state = QLabel("LMU en «ventana sin bordes»")
         self.coach_state.setObjectName("subtitle")
+        self.coach_state.setToolTip("El overlay se muestra encima de LMU si el juego está en modo ventana sin bordes")
         tb.addWidget(self.coach_state)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        spacer.setStyleSheet("background: transparent;")
         tb.addWidget(spacer)
+        self.update_btn = QPushButton()
+        self.update_btn.setObjectName("coach")
+        self.update_btn.clicked.connect(self._show_update)
+        self.update_action = tb.addWidget(self.update_btn)
+        self.update_action.setVisible(False)  # solo aparece si hay versión nueva
+        self._release = None
+        self.home_btn = QPushButton("🏠")
+        self.home_btn.setObjectName("icon")
+        self.home_btn.setToolTip("Inicio: tu última sesión, tu objetivo más cercano y la semana")
+        self.home_btn.clicked.connect(self.show_home)
+        tb.addWidget(self.home_btn)
         self.progress_btn = QPushButton("📈  Mi progreso")
         self.progress_btn.setToolTip("Tu evolución en cada circuito y coche, tu vuelta ideal y tus objetivos")
         self.progress_btn.clicked.connect(self._show_progress)
@@ -78,39 +91,39 @@ class MainWindow(QMainWindow):
         self.rank_btn.setToolTip("Tus tiempos frente a los de las sesiones importadas de otros pilotos")
         self.rank_btn.clicked.connect(lambda: RankingDialog(self, self.index.sessions, short_track).exec())
         tb.addWidget(self.rank_btn)
-        self.import_btn = QPushButton("⬇  Importar sesión")
-        self.import_btn.setToolTip("Abre un .lmusession que te haya pasado otro piloto (también puedes arrastrarlo aquí)")
-        self.import_btn.clicked.connect(self._choose_import)
-        tb.addWidget(self.import_btn)
-        self.backup_btn = QPushButton("💾  Copia")
-        self.backup_btn.setToolTip("Copia propia de tus sesiones (no se pierden aunque LMU las borre)")
-        self.backup_btn.clicked.connect(self._show_backup)
-        tb.addWidget(self.backup_btn)
         self.settings_btn = QPushButton("⚙  Ajustes")
         self.settings_btn.setToolTip("Voz, overlay y qué dice el coach: spotter, ingeniero, coach y coche")
         self.settings_btn.clicked.connect(lambda: self.show_settings())
         tb.addWidget(self.settings_btn)
-        self.diag_btn = QPushButton("🩺  Diagnóstico")
-        self.diag_btn.setToolTip("Comprueba por qué no se cargan datos de LMU y permite elegir la carpeta del juego")
-        self.diag_btn.clicked.connect(lambda: self.show_diagnostics())
-        tb.addWidget(self.diag_btn)
-        self.update_btn = QPushButton()
-        self.update_btn.setObjectName("coach")
-        self.update_btn.clicked.connect(self._show_update)
-        self.update_action = tb.addWidget(self.update_btn)
-        self.update_action.setVisible(False)  # solo aparece si hay versión nueva
-        self._release = None
-        self.refresh_btn = QPushButton("⟳  Buscar sesiones nuevas")
+        self.refresh_btn = QPushButton("⟳")
+        self.refresh_btn.setObjectName("icon")
+        self.refresh_btn.setToolTip("Buscar sesiones nuevas (y copiarlas a tu carpeta)")
         self.refresh_btn.clicked.connect(self.refresh)
         tb.addWidget(self.refresh_btn)
+        # lo que se usa de vez en cuando, en un menú
+        more = QMenu(self)
+        more.addAction("⬇  Importar sesión…", self._choose_import).setToolTip(
+            "Abre un .lmusession que te haya pasado otro piloto (también puedes arrastrarlo aquí)")
+        more.addAction("💾  Copia de seguridad…", self._show_backup)
+        more.addAction("🩺  Diagnóstico…", lambda: self.show_diagnostics())
+        more.addSeparator()
+        more.addAction("👋  Asistente de bienvenida…", self.show_welcome)
+        more.setToolTipsVisible(True)
+        self.more_btn = QPushButton("⋯")
+        self.more_btn.setObjectName("icon")
+        self.more_btn.setToolTip("Importar sesión, copia de seguridad, diagnóstico…")
+        self.more_btn.setMenu(more)
+        tb.addWidget(self.more_btn)
 
         self.list = SessionList()
         self.view = SessionView(lambda: self.index)
         self.stack = QStackedWidget()
-        self.empty = empty = QLabel("Elige una sesión de la lista")
-        empty.setAlignment(Qt.AlignCenter)
-        empty.setObjectName("subtitle")
-        self.stack.addWidget(empty)
+        from .home import HomePage
+        self.home = HomePage()
+        self.home.open_session.connect(self._open_from_home)
+        self.home.start_coach.connect(self._toggle_coach)
+        self.home.show_progress.connect(self._show_progress)
+        self.stack.addWidget(self.home)
         self.stack.addWidget(self.view)
         split = QSplitter(Qt.Horizontal)
         split.addWidget(self.list)
@@ -128,6 +141,7 @@ class MainWindow(QMainWindow):
 
         if self.index.sessions:
             self.list.set_sessions(self.index.sessions)
+            self.home.set_sessions(self.index.sessions)
         self.refresh()
         # Buscar actualizaciones en segundo plano, cuando la ventana ya está a la vista
         self.update_worker = CheckWorker()
@@ -177,6 +191,7 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.refresh_btn.setEnabled(True)
         self.list.set_sessions(sessions)
+        self.home.set_sessions(sessions)
         errors = sum(1 for s in sessions if s.error)
         msg = f"{len(sessions)} sesiones"
         ls = self.index.last_sync
@@ -199,7 +214,7 @@ class MainWindow(QMainWindow):
         elif not any(not s.imported and not s.error for s in sessions) and not self._diag_auto_shown:
             # Sin ninguna sesión propia: casi siempre es la carpeta o la grabación de telemetría de LMU
             self._diag_auto_shown = True
-            self.empty.setText("No hay sesiones de LMU todavía.\nPulsa «🩺 Diagnóstico» para ver qué falta.")
+            self.home.set_message("No hay sesiones de LMU todavía. Pulsa ⋯ › 🩺 Diagnóstico para ver qué falta.")
             QTimer.singleShot(0, lambda: self.show_diagnostics("No encuentro sesiones de Le Mans Ultimate"))
         else:
             QTimer.singleShot(300, self._show_whats_new)
@@ -358,13 +373,23 @@ class MainWindow(QMainWindow):
     def _coach_stopped(self, *args):
         self._set_coach_ui(False)
 
+    def show_home(self):
+        self.list.table.clearSelection()
+        self.home.set_sessions(self.index.sessions)     # p. ej. un objetivo nuevo
+        self.stack.setCurrentWidget(self.home)
+
+    def _open_from_home(self, info):
+        self.list.select_path(info.path)
+        if self.stack.currentWidget() is not self.view:
+            self._open(info)
+
     def _set_coach_ui(self, running):
+        self.home.set_coach_running(running)
         self.coach_btn.setText("■  Detener modo coach" if running else "▶  Iniciar modo coach")
         self.coach_btn.setProperty("running", "true" if running else "false")
         self.coach_btn.style().unpolish(self.coach_btn)
         self.coach_btn.style().polish(self.coach_btn)
-        self.coach_state.setText("Coach activo: entra en pista y tendrás delta y avisos de frenada" if running
-                                 else "El overlay se muestra encima de LMU (modo ventana sin bordes)")
+        self.coach_state.setText("Coach activo: sal a pista" if running else "LMU en «ventana sin bordes»")
 
     def closeEvent(self, e):
         if self.coach and self.coach.state() != QProcess.NotRunning:

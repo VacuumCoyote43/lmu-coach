@@ -40,6 +40,15 @@ QPushButton#coach {{ background: #1f7a45; border: none; font-weight: 600; paddin
 QPushButton#coach:hover {{ background: #25904f; }}
 QPushButton#coach[running="true"] {{ background: #8a2a2a; }}
 QPushButton#coach[running="true"]:hover {{ background: #a33232; }}
+QPushButton#icon {{ font-size: 13pt; padding: 2px 10px; min-width: 22px; }}
+QPushButton#icon::menu-indicator {{ image: none; width: 0; }}
+QPushButton#segment {{ background: {BG}; color: {MUTED}; border: 1px solid {BORDER}; border-radius: 15px;
+                       padding: 5px 18px; font-weight: 600; }}
+QPushButton#segment:hover {{ color: {FG}; }}
+QPushButton#segment:checked {{ background: #1d3a52; color: {FG}; border-color: {ACCENT}; }}
+QPushButton#home_card {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 10px; padding: 14px;
+                         text-align: left; }}
+QPushButton#home_card:hover {{ border-color: {ACCENT}; }}
 QCheckBox {{ spacing: 6px; }}
 QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid {MUTED}; border-radius: 3px; background: {PANEL_2}; }}
 QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; image: none; }}

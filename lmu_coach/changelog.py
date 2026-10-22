@@ -1,6 +1,15 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.16.0": [
+        "Pantalla de inicio: tu última sesión, tu objetivo más cercano, la semana y un botón grande para el coach "
+        "(vuelve a ella con 🏠).",
+        "Barra de arriba más limpia: importar, copia de seguridad y diagnóstico están ahora en el menú ⋯.",
+        "En cada sesión, más sitio para las vueltas y las gráficas; «Dónde pierdes tiempo» va al lado de las "
+        "gráficas (el detalle de cada frenada, al pasar el ratón).",
+        "Los grupos Vuelta, Carrera y Coche son ahora botones, para no confundirlos con sus pestañas.",
+        "El mapa de la trazada ya no amontona los nombres de las frenadas.",
+    ],
     "1.15.0": [
         "El coach te dice por qué pierdes en una curva: «frenas quince metros antes», «aceleras veinte metros tarde»…",
         "Modo práctica: clic derecho en una frenada de «Dónde pierdes tiempo» › «Practicar en el coach». En pista "

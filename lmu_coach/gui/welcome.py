@@ -245,7 +245,7 @@ class WelcomeWizard(QWizard):
             "<li>Elige una sesión de la lista para analizarla.</li>"
             "<li>En <b>⚙ Ajustes</b> decides qué te dice el coach: cada mensaje del spotter, del ingeniero y "
             "del coach se puede activar o quitar.</li>"
-            "<li>Si algo no carga, <b>🩺 Diagnóstico</b> te dice qué falta.</li></ul>"))
+            "<li>Si algo no carga, <b>⋯ › 🩺 Diagnóstico</b> (arriba a la derecha) te dice qué falta.</li></ul>"))
         dv.addStretch(1)
         self.addPage(done)
 

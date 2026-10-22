@@ -19,11 +19,11 @@ Solo hace falta hacerlo una vez, dentro del juego:
 
 1. **Activa la grabación de telemetría.** En los ajustes de LMU, activa **«Automatically Record Telemetry»** (o usa el atajo de teclado **«Telemetry Recording»** cuando estés en pista). Sin esto, LMU no guarda las sesiones en `UserData\Telemetry` y la app no tiene nada que analizar. El modo coach sí funciona sin ello.
 2. **Pon el juego en «Ventana sin bordes» (Borderless).** En pantalla completa, el coach no se puede ver encima del juego.
-3. **Sal a pista.** Los datos en directo del coach solo llegan con el coche en pista, no en el monitor ni en el garaje. Las sesiones aparecen en la app al terminar de rodar: pulsa «⟳ Buscar sesiones nuevas».
+3. **Sal a pista.** Los datos en directo del coach solo llegan con el coche en pista, no en el monitor ni en el garaje. Las sesiones aparecen en la app al terminar de rodar: pulsa ⟳ (buscar sesiones nuevas) en la barra de arriba.
 
 No hay que instalar plugins ni tocar archivos del juego: la app lee la telemetría que LMU ya graba (y guarda una copia propia) y su memoria compartida (`LMU_Data`).
 
-Si algo no funciona, pulsa **🩺 Diagnóstico** en la app. Comprueba que encuentra la carpeta de LMU (si no, deja elegirla a mano), que hay sesiones grabadas, que la grabación de telemetría está activada y que llegan datos en directo.
+Si algo no funciona, abre **⋯ → 🩺 Diagnóstico** en la app. Comprueba que encuentra la carpeta de LMU (si no, deja elegirla a mano), que hay sesiones grabadas, que la grabación de telemetría está activada y que llegan datos en directo.
 
 Si usas varios monitores, el coach se coloca solo en la pantalla del juego. Puedes arrastrarlo a donde quieras y recuerda la posición.
 
@@ -44,7 +44,7 @@ Pruebas (no necesitan nada más que Python; las de sesiones reales y la ventana 
 python -m unittest discover -s tests -t .
 ```
 
-Si algo falla en la app o en el coach, los errores quedan en `%LOCALAPPDATA%\LMU Coach\logs` (`app.log` y `coach.log`); en la app, **🩺 Diagnóstico → 📄 Abrir registro**.
+Si algo falla en la app o en el coach, los errores quedan en `%LOCALAPPDATA%\LMU Coach\logs` (`app.log` y `coach.log`); en la app, **⋯ → 🩺 Diagnóstico → 📄 Abrir registro**.
 
 Atajos (usan Python 3.12 instalado para el usuario):
 
@@ -56,9 +56,10 @@ Atajos (usan Python 3.12 instalado para el usuario):
 
 ## La app
 
+- **Inicio**: sin ninguna sesión abierta (o con 🏠), la app enseña tu última sesión, tu objetivo más cercano, lo que has corrido en los últimos 7 días y un botón grande para iniciar el coach. Lo que se usa de vez en cuando (importar sesión, copia de seguridad, diagnóstico) está en el menú **⋯** de arriba a la derecha.
 - **Primera vez**: un asistente de bienvenida comprueba que LMU graba la telemetría, deja elegir la voz del coach y dónde se guarda la copia de tus sesiones. Se puede repetir desde ⚙ Ajustes.
-- **Sesiones**: lee las que LMU graba en `UserData/Telemetry/*.duckdb`. Puedes filtrar por circuito, coche y tipo de sesión. En morado aparece tu récord para cada coche y circuito. Para ver las sesiones nuevas, usa "Buscar sesiones nuevas".
-- **Copia propia de tus sesiones** (💾 Copia): al buscar sesiones nuevas, la app copia las que LMU ha terminado de grabar a `Documentos\LMU Coach\Sesiones` (se puede cambiar) y lee de ahí. Aunque LMU borre sus archivos, reinstales el juego o cambies de PC (llevándote esa carpeta), no pierdes nada. La carpeta de LMU nunca se modifica.
+- **Sesiones**: lee las que LMU graba en `UserData/Telemetry/*.duckdb`. Puedes filtrar por circuito, coche y tipo de sesión. En morado aparece tu récord para cada coche y circuito. Para ver las sesiones nuevas, pulsa ⟳.
+- **Copia propia de tus sesiones** (⋯ → 💾 Copia de seguridad): al buscar sesiones nuevas, la app copia las que LMU ha terminado de grabar a `Documentos\LMU Coach\Sesiones` (se puede cambiar) y lee de ahí. Aunque LMU borre sus archivos, reinstales el juego o cambies de PC (llevándote esa carpeta), no pierdes nada. La carpeta de LMU nunca se modifica.
 - **Imagen del coche**: cada sesión muestra la imagen oficial de su decoración (en la lista y en la cabecera), sacada de la propia interfaz de LMU (`Bin/UI.zip`). Si LMU está abierto al usar la app, aprende la lista completa de decoraciones y la guarda, para que también salgan las más nuevas.
 - **Vueltas**: tiempo, sectores (los mejores en morado), diferencia con la mejor y estado (válida, invalidada, boxes).
 - **Comparar con**: la mejor vuelta de la sesión o tu mejor vuelta histórica con ese coche y circuito.
@@ -68,7 +69,7 @@ Atajos (usan Python 3.12 instalado para el usuario):
 - **Nombres de las curvas**: las frenadas llevan el nombre real de la curva en los circuitos conocidos (Rettifilo, Copse, S do Senna…). Haz doble clic en una para ponerle tu propio nombre; el coach y la voz también los usan («pierdes dos décimas en Ascari»).
 - **Compartir sesiones**:
   - **⬆ Exportar sesión** guarda la sesión abierta en un archivo `.lmusession`, un zip que ocupa más o menos la mitad que el original.
-  - **⬇ Importar sesión** carga un archivo que te hayan pasado. También puedes arrastrarlo a la ventana o hacerle doble clic. Se aceptan `.lmusession`, `.zip` y `.duckdb`.
+  - **⋯ → ⬇ Importar sesión** carga un archivo que te hayan pasado. También puedes arrastrarlo a la ventana o hacerle doble clic. Se aceptan `.lmusession`, `.zip` y `.duckdb`.
   - Las sesiones importadas salen en naranja con el nombre del piloto, y se pueden filtrar con «Importadas».
   - No cuentan como tu récord. Sí aparecen en «Comparar con», para enfrentar tu vuelta a la de tu amigo.
   - Con **🗑 Quitar importada** se borra la copia de la app. LMU no se toca.

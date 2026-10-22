@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QStandardPaths, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QSplitter,
-    QTabWidget, QVBoxLayout, QWidget,
+    QStackedWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import car_pix, theme
@@ -22,6 +22,52 @@ from ..laps import LapStore, fmt_time
 from ..log import log
 from ..paths import LAPS_DIR
 from ..sessions import SessionData, SessionInfo
+
+
+# --------------------------------------------------------------------------- grupos de pestañas
+
+class SegmentedTabs(QWidget):
+    """Grupos (Vuelta, Carrera, Coche) como botones segmentados encima de sus pestañas, para que no se
+    confundan con las pestañas de cada grupo. Misma interfaz que un QTabWidget para lo que se usa aquí."""
+    currentChanged = Signal(int)
+
+    def __init__(self):
+        super().__init__()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        self.bar = QHBoxLayout()
+        self.bar.setSpacing(4)
+        self.bar.addStretch(1)
+        lay.addLayout(self.bar)
+        self.stack = QStackedWidget()
+        lay.addWidget(self.stack, 1)
+        self.buttons = []
+
+    def addTab(self, widget, title):
+        i = self.stack.addWidget(widget)
+        b = QPushButton(title)
+        b.setObjectName("segment")
+        b.setCheckable(True)
+        b.clicked.connect(lambda _=False, i=i: self.setCurrentIndex(i))
+        self.bar.insertWidget(len(self.buttons), b)
+        self.buttons.append(b)
+        if i == 0:
+            b.setChecked(True)
+        return i
+
+    def count(self):
+        return self.stack.count()
+
+    def currentIndex(self):
+        return self.stack.currentIndex()
+
+    def setCurrentIndex(self, i):
+        for k, b in enumerate(self.buttons):
+            b.setChecked(k == i)
+        if i != self.stack.currentIndex():
+            self.stack.setCurrentIndex(i)
+            self.currentChanged.emit(i)
 
 
 # --------------------------------------------------------------------------- vista de sesión
@@ -108,7 +154,7 @@ class SessionView(QWidget):
         self.map = TrackMap()
         mb.addWidget(self.map)
         top.addWidget(map_box)
-        top.setSizes([520, 380])
+        top.setSizes([560, 420])
         split.addWidget(top)
 
         self.charts = TelemetryCharts()
@@ -121,10 +167,13 @@ class SessionView(QWidget):
         self.assistant_tab = AssistantTab()
         self.race_tab = RaceSummaryTab()
         # tres grupos (la vuelta, la carrera y el coche), cada uno con sus pestañas
-        self.tabs = QTabWidget()
+        self.charts_page = QSplitter(Qt.Horizontal)   # gráficas y, al lado, dónde pierdes tiempo
+        self.charts_page.setChildrenCollapsible(False)
+        self.charts_page.addWidget(self.charts)
+        self.tabs = SegmentedTabs()
         self.groups = []
         for title, pages in (
-                ("🏁  Vuelta", [(self.charts, "📈  Gráficas"), (self.replay, "▶  Repetición"),
+                ("🏁  Vuelta", [(self.charts_page, "📈  Gráficas"), (self.replay, "▶  Repetición"),
                                (self.cons_tab, "🎯  Consistencia")]),
                 ("📊  Carrera", [(self.race_tab, "🏁  Resumen de carrera"), (self.pace_tab, "📉  Ritmo y relevos"),
                                 (self.fuel_tab, "⛽  Combustible y estrategia")]),
@@ -139,25 +188,28 @@ class SessionView(QWidget):
             self.groups.append(inner)
         self._loaded_tabs = set()
         self._stats_cache = {}
-        split.addWidget(self.tabs)
 
         zones_box = QWidget()
         zb = QVBoxLayout(zones_box)
         zb.setContentsMargins(0, 0, 0, 0)
         zrow = QHBoxLayout()
-        zrow.addWidget(section("Dónde pierdes tiempo  ·  frenada a frenada"))
+        zrow.addWidget(section("Dónde pierdes tiempo"))
         zrow.addStretch(1)
         self.zone_summary = QLabel()
         zrow.addWidget(self.zone_summary)
-        reset = QPushButton("Ver vuelta entera")
+        reset = QPushButton("Vuelta entera")
         reset.clicked.connect(self.charts.reset_zoom)
         zrow.addWidget(reset)
         zb.addLayout(zrow)
         self.zones = make_table(["Frenada", "Tiempo", "Punto de frenada", "V. mínima (tú / ref)",
                                  "Gas a fondo", "Qué cambiar"], stretch_col=5)
         zb.addWidget(self.zones)
-        split.addWidget(zones_box)
-        split.setSizes([230, 470, 220])
+        self.charts_page.addWidget(zones_box)
+        self.charts_page.setSizes([760, 420])
+        for c in (2, 3, 4):              # el detalle va en «Qué cambiar» y en el tooltip de cada frenada
+            self.zones.setColumnHidden(c, True)
+        split.addWidget(self.tabs)
+        split.setSizes([270, 680])
         lay.addWidget(split, 1)
 
         self.laps.itemSelectionChanged.connect(self._lap_selected)
@@ -470,7 +522,15 @@ class SessionView(QWidget):
             col = theme.RED if z.time_diff > 0.02 else theme.GREEN if z.time_diff < -0.02 else theme.MUTED
             i = self.sd.info
             name = item(corners.label(z.zone, i.track, i.layout), color=theme.AMBER)
-            name.setToolTip(f"Frena a {z.zone.start:.0f} m · doble clic para ponerle nombre")
+            bd, td = z.brake_diff, z.throttle_diff
+            brake_txt = "igual" if abs(bd) < 5 else f"{abs(bd):.0f} m " + ("antes" if bd < 0 else "después")
+            thr_txt = "igual" if abs(td) < 8 else f"{abs(td):.0f} m " + ("antes" if td < 0 else "después")
+            name.setToolTip("\n".join([
+                f"Frena a {z.zone.start:.0f} m",
+                f"Punto de frenada: {brake_txt}",
+                f"Velocidad mínima: {z.my_min_speed:.0f} / {z.zone.min_speed:.0f} km/h ({z.min_speed_diff:+.0f})",
+                f"Gas a fondo: {thr_txt}",
+                "Doble clic: ponerle nombre · clic derecho: practicarla en el coach"]))
             name.setData(Qt.UserRole, r)
             t.setItem(r, 0, name)
             t.setItem(r, 1, item(f"{z.time_diff:+.3f} s", Qt.AlignRight | Qt.AlignVCenter, col, bold=True))
@@ -488,8 +548,8 @@ class SessionView(QWidget):
             worst = max(res, key=lambda z: z.time_diff)
             lost = sum(z.time_diff for z in res if z.time_diff > 0)
             self.zone_summary.setText(
-                f"Peor: F{worst.zone.idx} ({worst.time_diff:+.3f} s)   ·   perdido en frenadas: {lost:.3f} s"
-                if worst.time_diff > 0.02 else "Sin pérdidas apreciables en frenadas")
+                f"Peor F{worst.zone.idx} {worst.time_diff:+.3f} s · total {lost:.3f} s"
+                if worst.time_diff > 0.02 else "Sin pérdidas apreciables")
         else:
             self.zone_summary.setText("")
 

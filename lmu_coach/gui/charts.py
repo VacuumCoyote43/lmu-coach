@@ -175,11 +175,21 @@ class TrackMap(pg.PlotWidget):
                     color = {1: theme.RED, -1: theme.GREEN, 0: "#8b8f99"}[int(sign[start])]
                     self.plot(x[start:i + 1], y[start:i + 1], pen=_pen(color, 3))
                     start = i
+        # frenadas: un punto en cada una y el nombre solo si no se pisa con otro (todos al pasar el ratón)
+        span = max(float(np.ptp(x)), float(np.ptp(y)), 1.0)
+        pts, shown = [], []
         for z in zones:
             i = int(np.clip(np.searchsorted(lap["d"], z.start), 0, len(x) - 1))
-            t = pg.TextItem(f"F{z.idx}", color=theme.AMBER, anchor=(0.5, 0.5))
-            t.setPos(float(x[i]), float(y[i]))
-            self.addItem(t)
+            px, py = float(x[i]), float(y[i])
+            pts.append({"pos": (px, py), "data": f"F{z.idx}"})
+            if all(np.hypot(px - qx, py - qy) > span * 0.18 for qx, qy in shown):
+                shown.append((px, py))
+                t = pg.TextItem(f"F{z.idx}", color=theme.AMBER, anchor=(-0.15, 1.1))
+                t.setPos(px, py)
+                self.addItem(t)
+        if pts:
+            self.addItem(pg.ScatterPlotItem(pts, size=6, brush=pg.mkBrush(theme.AMBER), pen=None, hoverable=True,
+                                            hoverSize=10, tip=lambda x, y, data: data))
         self.addItem(self.dot)
         self.autoRange()
 
