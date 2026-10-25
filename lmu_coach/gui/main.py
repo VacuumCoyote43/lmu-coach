@@ -100,6 +100,7 @@ class MainWindow(QMainWindow):
         more.addAction("⬇  Importar sesión…", self._choose_import).setToolTip(
             "Abre un .lmusession que te haya pasado otro piloto (también puedes arrastrarlo aquí)")
         more.addAction("💾  Copia de seguridad…", self._show_backup)
+        more.addAction("🛠  Editor de setups…", self._edit_setup)
         more.addAction("🩺  Diagnóstico…", lambda: self.show_diagnostics())
         more.addSeparator()
         more.addAction("👋  Asistente de bienvenida…", self.show_welcome)
@@ -367,6 +368,11 @@ class MainWindow(QMainWindow):
 
     def _coach_stopped(self, *args):
         self._set_coach_ui(False)
+
+    def _edit_setup(self):
+        from .setup_tools import SetupEditorDialog
+        sd = self.view.sd if self.stack.currentWidget() is self.view else None
+        SetupEditorDialog(self, self.index.sessions, sd).exec()
 
     def show_home(self):
         self.list.table.clearSelection()

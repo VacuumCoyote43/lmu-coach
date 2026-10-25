@@ -112,6 +112,13 @@ class SessionView(QWidget):
         self.plan_btn = QPushButton("🎯  Plan")
         self.plan_btn.setToolTip("Las curvas donde más pierdes frente a tu mejor vuelta y qué cambiar")
         self.plan_btn.clicked.connect(self._show_plan)
+        self.setup_btn = QPushButton("🛠  Setup ▾")
+        self.setup_btn.setToolTip("Editar el setup para LMU o comparar dos setups (A/B)")
+        setup_menu = QMenu(self)
+        setup_menu.addAction("🛠  Editar setup…", self._edit_setup)
+        setup_menu.addAction("🧪  Comparar setups (A/B)…", self._ab_test)
+        self.setup_btn.setMenu(setup_menu)
+        head.addWidget(self.setup_btn, 0, Qt.AlignTop)
         head.addWidget(self.plan_btn, 0, Qt.AlignTop)
         head.addWidget(self.progress_btn, 0, Qt.AlignTop)
         self.image_btn = QPushButton("📷  Imagen")
@@ -615,6 +622,19 @@ class SessionView(QWidget):
         QMessageBox.information(self, "Sesión exportada",
                                 f"Guardada en:\n{out}\n\n({mb:.1f} MB) Pásale este archivo a otro piloto: "
                                 "lo abre con «Importar sesión» en LMU Coach.")
+
+    def _edit_setup(self):
+        from .setup_tools import SetupEditorDialog
+        sugs = None
+        if self.assistant_tab in self._loaded_tabs and getattr(self.assistant_tab, "report", None) is not None:
+            sugs = self.assistant_tab.report.suggestions
+        SetupEditorDialog(self, self.index_getter().sessions, self.sd, sugs).exec()
+
+    def _ab_test(self):
+        if not self.sd:
+            return
+        from .setup_tools import ABDialog
+        ABDialog(self, self.index_getter().sessions, self.sd, self._load).exec()
 
     def _save_image(self):
         """Imagen de la vista tal como está (vuelta, comparación y pestaña abiertas); también al portapapeles."""

@@ -1,6 +1,15 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.17.0": [
+        "📻 Radio con el ingeniero: mantén pulsado un botón del volante (o una tecla), pregunta y te contesta. "
+        "Tú eliges las frases y qué datos responde cada una (⚙ Ajustes › Radio), entre más de 35: combustible, "
+        "energía, estrategia, rivales, neumáticos, presiones, frenos, motor, pista, objetivo…",
+        "🛠 Editor de setups: parte del reglaje que tienes cargado en LMU, cámbialo dentro de los límites de tu "
+        "coche (o aplica las sugerencias del asistente) y guárdalo para cargarlo en el garaje.",
+        "🧪 Comparar setups (A/B): dos sesiones con el mismo coche y circuito, tu ritmo real y curva a curva, y qué "
+        "cambiaba del reglaje.",
+    ],
     "1.16.1": [
         "Asistente de reglaje más realista: ya no propone bajar lo que está al mínimo (como la presión) ni subir lo "
         "que está al máximo, ni tocar ajustes que tu coche no permite cambiar.",

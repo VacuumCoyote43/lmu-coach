@@ -36,6 +36,18 @@ class AnalysisTest(unittest.TestCase):
                 focus, summary = training.build(sd)
                 self.assertEqual(summary["laps"], len(valid))
 
+    def test_ab_comparison_of_two_sessions(self):
+        from lmu_coach import abtest
+        from lmu_coach.sessions import SessionData
+        a = SESSIONS[0]
+        others = [s for s in real_sessions() if s.track == a.track and s.car == a.car and s.path != a.path]
+        if not others:
+            self.skipTest("no hay otra sesión con el mismo coche y circuito")
+        r = abtest.compare(SessionData(a), SessionData(others[0]))
+        self.assertIsNotNone(r.a.pace)
+        self.assertTrue(r.corners)
+        self.assertTrue(r.verdict())
+
     def test_coach_lap_from_history(self):
         from lmu_coach.sessions import SessionData
         info = SESSIONS[0]

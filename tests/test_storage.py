@@ -5,7 +5,7 @@ import time
 import unittest
 from types import SimpleNamespace
 
-from lmu_coach import archive, config, corners, goals, racelog, training
+from lmu_coach import archive, config, corners, goals, racelog, svm, training
 from lmu_coach.car_images import CarImages
 
 from .helpers import TempDirTest
@@ -209,6 +209,59 @@ class RaceLogTest(TempDirTest):
         self.assertEqual(racelog.find("Monza", "296", "2026-10-19 20:30")["finish"], 2)
         self.assertIsNone(racelog.find("Monza", "911", "2026-10-19 20:30"))
         self.assertIsNone(racelog.find("Monza", "296", "2026-10-19 22:00"))     # guardado antes de empezar
+
+
+class SvmTest(TempDirTest):
+    SAMPLE = r"""VehicleClassSetting="GT3 McLaren_720S_LMGT3_Evo WEC2025"
+//VEH=D:\LMU\Vehicles\McLaren\95_25_UNIT382AB771.VEH
+[GENERAL]
+Notes=""
+FuelSetting=85//0.86
+[REARWING]
+RWSetting=19//7.6 deg
+[SUSPENSION]
+FrontWheelTrackSetting=0//Non-adjustable
+RearAntiSwaySetting=3//P3 18x2mm
+[CONTROLS]
+RearBrakeSetting=20//52.0:48.0
+[FRONTLEFT]
+PressureSetting=0//136 kPa
+CamberSetting=12//-2.20 deg
+[BASIC]
+Downforce=0.500000
+"""
+
+    def test_parse_change_and_save(self):
+        src = self.tmp / "a.svm"
+        src.write_text(self.SAMPLE, encoding="utf-8")
+        f = svm.parse(src)
+        self.assertEqual((f.vehicle_class, f.veh_stem), ("GT3 McLaren_720S_LMGT3_Evo WEC2025", "95_25_UNIT382AB771"))
+        self.assertEqual(f.entry("WM_PRESSURE-W_FL").text, "136 kPa")
+        self.assertFalse(next(e for e in f.entries if e.key == "FrontWheelTrackSetting").adjustable)
+        f.entry("VM_REAR_ANTISWAY").new_index = 2
+        out = svm.save(f, self.tmp / "Portimao" / "menos barra", note="prueba")
+        text = out.read_text(encoding="utf-8")
+        self.assertIn("RearAntiSwaySetting=2//", text)
+        self.assertIn('Notes="prueba"', text)
+        self.assertIn("RWSetting=19//7.6 deg", text)          # lo demás, tal cual
+        self.assertEqual(svm.parse(out).entry("VM_REAR_ANTISWAY").index, 2)
+
+    def test_assistant_suggestions_respect_limits(self):
+        from types import SimpleNamespace
+        src = self.tmp / "a.svm"
+        src.write_text(self.SAMPLE, encoding="utf-8")
+        f = svm.parse(src)
+        sug = SimpleNamespace(raw_changes=[("Barra tras.", "más dura", "VM_REAR_ANTISWAY", +1),
+                                           ("Alerón", "un punto más", "VM_REAR_WING", +1),
+                                           ("Presión", "menos", "WM_PRESSURE-W_FL", -1)])
+        done = svm.apply_suggestions(f, [sug], {"VM_REAR_WING": (19, 0, 19), "VM_REAR_ANTISWAY": (3, 0, 7)})
+        self.assertEqual(len(done), 1)                       # el alerón ya está al máximo; la presión, al mínimo
+        self.assertEqual(f.entry("VM_REAR_ANTISWAY").new_index, 4)
+
+    def test_track_folder_guess(self):
+        folders = ["Bahrain", "Interlagos", "Portimao", "Silverstone", "Silverstonewec"]
+        self.assertEqual(svm.guess_track_folder("Algarve International Circuit", folders), "Portimao")
+        self.assertEqual(svm.guess_track_folder("Autódromo José Carlos Pace", folders), "Interlagos")
 
 
 class LogTest(TempDirTest):

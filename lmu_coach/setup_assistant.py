@@ -150,6 +150,7 @@ class Suggestion:
     title: str
     evidence: str
     changes: list            # [(parámetro, ajuste)]
+    raw_changes: list = field(default_factory=list)   # [(parámetro, ajuste, clave, sentido)] aplicables
 
 
 @dataclass
@@ -337,7 +338,7 @@ def apply_limits(sug: list, setup: dict, steps: dict) -> list:
     el mismo ajuste en sentidos opuestos, se queda la más importante. Cada cambio sale con su valor actual."""
     out, taken = [], {}            # clave -> (sentido, título de la sugerencia que la usa)
     for s in sorted(sug, key=lambda x: x.priority):
-        changes, notes, fixed = [], [], []
+        changes, notes, fixed, raw = [], [], [], []
         for ch in s.changes:
             name, how = ch[0], ch[1]
             key, d = (ch[2], ch[3]) if len(ch) >= 4 else (None, 0)
@@ -371,6 +372,7 @@ def apply_limits(sug: list, setup: dict, steps: dict) -> list:
                 continue
             if d:
                 taken.setdefault(key, (d, s.title))
+                raw.append((name, how, key, d))
             changes.append((name, f"{how}  (ahora {text})" if text else how))
         real = [c for c in changes if c[0] != "Tu técnica"]
         wanted = [c for c in s.changes if c[0] != "Tu técnica"]
@@ -385,6 +387,7 @@ def apply_limits(sug: list, setup: dict, steps: dict) -> list:
             s.priority = 3
             s.title += " (sin margen en el reglaje)"
         s.changes = changes
+        s.raw_changes = raw
         out.append(s)
     return out
 
