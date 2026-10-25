@@ -127,6 +127,12 @@ class MainWindow(QMainWindow):
         split.setSizes([600, 900])
         self.setCentralWidget(split)
 
+        self.debrief_note = QPushButton()
+        self.debrief_note.setObjectName("coach")
+        self.debrief_note.hide()
+        self.debrief_note.clicked.connect(self._open_new_debrief)
+        self.statusBar().addPermanentWidget(self.debrief_note)
+        self._new_debrief = None
         self.progress = QProgressBar()
         self.progress.setFixedWidth(180)
         self.progress.hide()
@@ -199,6 +205,7 @@ class MainWindow(QMainWindow):
         if errors:
             msg += f"  ·  {errors} no se pudieron leer (¿LMU las está grabando ahora?)"
         self.statusBar().showMessage(msg, 8000)
+        self._check_new_session(sessions)
         if self._select_after:
             path, self._select_after = self._select_after, None
             self.list.select_path(path)
@@ -373,6 +380,41 @@ class MainWindow(QMainWindow):
         from .setup_tools import SetupEditorDialog
         sd = self.view.sd if self.stack.currentWidget() is self.view else None
         SetupEditorDialog(self, self.index.sessions, sd).exec()
+
+    # --- debrief de la última sesión ----------------------------------------------
+
+    def _check_new_session(self, sessions):
+        """Si hay una sesión tuya nueva con vueltas suficientes, ofrecer su debrief (botón en la barra de abajo)."""
+        from ..paths import load_settings
+        mine = [s for s in sessions if not s.imported and not s.error and s.valid_laps >= 3]
+        if not mine:
+            return
+        last = max(mine, key=lambda s: s.recorded)
+        seen = load_settings().get("debriefed")
+        if seen is None:                       # primera vez con esta versión: no avisar de sesiones antiguas
+            self._mark_debriefed(last)
+            return
+        if last.path != seen and last.recorded > load_settings().get("debriefed_at", ""):
+            self._new_debrief = last
+            self.debrief_note.setText(f"🧾  Debrief de tu sesión en {short_track(last.track)} ({last.recorded[11:]})")
+            self.debrief_note.show()
+
+    def _mark_debriefed(self, info):
+        from ..paths import load_settings, save_settings
+        st = load_settings()
+        st["debriefed"], st["debriefed_at"] = info.path, info.recorded
+        save_settings(st)
+
+    def _open_new_debrief(self):
+        info = self._new_debrief
+        if info is None:
+            return
+        self.debrief_note.hide()
+        self._mark_debriefed(info)
+        self.list.select_path(info.path)
+        if self.view.sd is None or self.view.sd.info.path != info.path:
+            self._open(info)
+        self.view.show_debrief()
 
     def show_home(self):
         self.list.table.clearSelection()

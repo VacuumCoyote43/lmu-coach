@@ -112,10 +112,14 @@ class SessionView(QWidget):
         self.plan_btn = QPushButton("🎯  Plan")
         self.plan_btn.setToolTip("Las curvas donde más pierdes frente a tu mejor vuelta y qué cambiar")
         self.plan_btn.clicked.connect(self._show_plan)
+        self.debrief_btn = QPushButton("🧾  Debrief")
+        self.debrief_btn.setToolTip("Las 3 cosas que más tiempo te darían en esta sesión, con un botón para cada una")
+        self.debrief_btn.clicked.connect(self.show_debrief)
+        head.addWidget(self.debrief_btn, 0, Qt.AlignTop)
         self.setup_btn = QPushButton("🛠  Setup ▾")
         self.setup_btn.setToolTip("Editar el setup para LMU o comparar dos setups (A/B)")
         setup_menu = QMenu(self)
-        setup_menu.addAction("🛠  Editar setup…", self._edit_setup)
+        setup_menu.addAction("🛠  Editar setup…", lambda: self._edit_setup())
         setup_menu.addAction("🧪  Comparar setups (A/B)…", self._ab_test)
         self.setup_btn.setMenu(setup_menu)
         head.addWidget(self.setup_btn, 0, Qt.AlignTop)
@@ -623,10 +627,19 @@ class SessionView(QWidget):
                                 f"Guardada en:\n{out}\n\n({mb:.1f} MB) Pásale este archivo a otro piloto: "
                                 "lo abre con «Importar sesión» en LMU Coach.")
 
-    def _edit_setup(self):
+    def show_debrief(self):
+        if not self.sd:
+            return
+        from .debrief_dialog import DebriefDialog
+        dlg = DebriefDialog(self, self.sd, self._own_infos())
+        dlg.open_page.connect(self.show_page)
+        dlg.open_setup.connect(lambda sugs: self._edit_setup(sugs))
+        dlg.exec()
+
+    def _edit_setup(self, sugs=None):
         from .setup_tools import SetupEditorDialog
-        sugs = None
-        if self.assistant_tab in self._loaded_tabs and getattr(self.assistant_tab, "report", None) is not None:
+        if sugs is None and self.assistant_tab in self._loaded_tabs and \
+                getattr(self.assistant_tab, "report", None) is not None:
             sugs = self.assistant_tab.report.suggestions
         SetupEditorDialog(self, self.index_getter().sessions, self.sd, sugs).exec()
 
