@@ -144,6 +144,7 @@ class App:
             if self.dash:
                 self.dash.stop()
             self.dash = dashboard.Dashboard(port)
+            self.dash.allow_setup = bool(d.get("setup"))
             if self.dash.start():
                 url = (dashboard.urls(port) or [f"http://localhost:{port}"])[0]
                 self.overlay.toast(f"📱 Panel: {url}", "#3fb6ff", 8)
@@ -153,6 +154,8 @@ class App:
         elif not d.get("on") and self.dash:
             self.dash.stop()
             self.dash = None
+        if self.dash:
+            self.dash.allow_setup = bool(d.get("setup"))
 
     def _draw(self, st: dict):
         """Dibuja el overlay y pasa lo mismo al panel del móvil (como mucho 10 veces por segundo)."""
@@ -168,6 +171,7 @@ class App:
             extra = {"flag": self._flag_banner(info), "best": self.session_best, "goal": self.goal,
                      "time_left": info.time_left if info and info.is_race else None, **self._last_lap}
             self.dash.state = dashboard.snapshot(st, extra)
+            self.dash.track_hint = self.ref_key[0] if self.ref_key else None
         except Exception:
             warn_once("panel", "No se pudo preparar el panel del móvil")
 

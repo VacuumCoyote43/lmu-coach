@@ -89,6 +89,7 @@ class Entry:
     text: str            # comentario (valor legible) tal como venía
     line: int            # nº de línea en el archivo
     new_index: int | None = None
+    default: bool = False   # línea comentada: LMU usa el valor de serie (al cambiarla se descomenta)
 
     @property
     def session_key(self) -> str | None:
@@ -129,7 +130,7 @@ class SvmFile:
         return [e for e in self.entries if e.changed]
 
 
-_LINE = re.compile(r"^(\w+)=(-?\d+)(?://(.*))?$")
+_LINE = re.compile(r"^(//)?(\w+)=(-?\d+)(?://(.*))?$")
 
 
 def parse(path: Path) -> SvmFile:
@@ -146,11 +147,12 @@ def parse(path: Path) -> SvmFile:
             svm.vehicle_class = line.split("=", 1)[1].strip().strip('"')
         elif line.startswith("//VEH="):
             svm.veh_stem = Path(line[6:].strip().replace("\\", "/")).stem
-        if section in ("", "BASIC") or line.startswith("//"):
+        if section in ("", "BASIC"):
             continue
         m = _LINE.match(line)
         if m:
-            svm.entries.append(Entry(section, m.group(1), int(m.group(2)), (m.group(3) or "").strip(), i))
+            svm.entries.append(Entry(section, m.group(2), int(m.group(3)), (m.group(4) or "").strip(), i,
+                                     default=bool(m.group(1))))
     return svm
 
 

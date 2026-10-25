@@ -255,6 +255,11 @@ class SettingsDialog(QDialog):
         drow.addWidget(self.dash_port)
         drow.addStretch(1)
         dv.addLayout(drow)
+        self.dash_setup = QCheckBox("Permitir editar y guardar setups desde el móvil (🛠 en el panel)")
+        self.dash_setup.setToolTip("Solo puede guardar setups nuevos (.svm) en la carpeta de reglajes de LMU")
+        self.dash_setup.setChecked(bool(d.get("setup")))
+        self.dash_setup.toggled.connect(self._dash_changed)
+        dv.addWidget(self.dash_setup)
         qrow = QHBoxLayout()
         self.dash_qr = QLabel()
         self.dash_qr.setFixedSize(150, 150)
@@ -359,7 +364,8 @@ class SettingsDialog(QDialog):
         self.voice_combo.blockSignals(False)
 
     def _dash_changed(self, *_):
-        self._set("dash", {"on": self.dash_on.isChecked(), "port": self.dash_port.value()})
+        self._set("dash", {"on": self.dash_on.isChecked(), "port": self.dash_port.value(),
+                           "setup": self.dash_setup.isChecked()})
         self._show_dash()
 
     def _show_dash(self):

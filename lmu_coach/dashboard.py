@@ -40,6 +40,8 @@ class Dashboard:
         self.state: dict = {"status": "Esperando a Le Mans Ultimate…"}
         self._server = None
         self.error = None
+        self.allow_setup = False      # ¿se puede guardar el setup desde el móvil? (Ajustes)
+        self.track_hint = None        # circuito en el que estás (para proponer la carpeta)
 
     def start(self) -> bool:
         if self._server:
@@ -47,21 +49,60 @@ class Dashboard:
         dash = self
 
         class Handler(BaseHTTPRequestHandler):
-            def do_GET(self):
-                if self.path.startswith("/state"):
-                    body = json.dumps(dash.state, ensure_ascii=False, default=_jsonable).encode("utf-8")
-                    ctype = "application/json; charset=utf-8"
-                elif self.path in ("/", "/index.html"):
-                    body, ctype = PAGE.encode("utf-8"), "text/html; charset=utf-8"
-                else:
-                    self.send_error(404)
-                    return
-                self.send_response(200)
+            def _send(self, body: bytes, ctype: str, code=200):
+                self.send_response(code)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+            def _json(self, obj, code=200):
+                self._send(json.dumps(obj, ensure_ascii=False, default=_jsonable).encode("utf-8"),
+                           "application/json; charset=utf-8", code)
+
+            def do_GET(self):
+                from urllib.parse import parse_qs, urlparse
+                url = urlparse(self.path)
+                if url.path == "/state":
+                    st = dict(dash.state)
+                    st["setup_ok"] = dash.allow_setup
+                    self._json(st)
+                elif url.path in ("/", "/index.html"):
+                    self._send(PAGE.encode("utf-8"), "text/html; charset=utf-8")
+                elif url.path.startswith("/setup") or url.path.startswith("/api/"):
+                    if not dash.allow_setup:
+                        self._json({"error": "Editar el setup desde el móvil está desactivado en Ajustes"}, 403)
+                        return
+                    from . import dash_setup
+                    try:
+                        if url.path == "/setup":
+                            self._send(dash_setup.PAGE.encode("utf-8"), "text/html; charset=utf-8")
+                        elif url.path == "/api/setups":
+                            self._json(dash_setup.list_setups())
+                        elif url.path == "/api/setup":
+                            path = (parse_qs(url.query).get("path") or [""])[0]
+                            self._json(dash_setup.load(path, dash.track_hint))
+                        else:
+                            self.send_error(404)
+                    except Exception as e:
+                        self._json({"error": f"Error: {e}"}, 500)
+                else:
+                    self.send_error(404)
+
+            def do_POST(self):
+                if self.path != "/api/setup/save" or not dash.allow_setup:
+                    self._json({"error": "No permitido"}, 403)
+                    return
+                n = int(self.headers.get("Content-Length") or 0)
+                if not 0 < n < 65536:
+                    self._json({"error": "Petición no válida"}, 400)
+                    return
+                from . import dash_setup
+                try:
+                    self._json(dash_setup.save(json.loads(self.rfile.read(n).decode("utf-8"))))
+                except Exception as e:
+                    self._json({"error": f"Error: {e}"}, 500)
 
             def log_message(self, *args):
                 pass
@@ -145,13 +186,14 @@ PAGE = r"""<!doctype html>
 #banner{display:none;border-radius:10px;padding:10px;text-align:center;font-weight:800;font-size:22px}
 #status{display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;
 text-align:center;padding:20px;background:var(--bg)}
-#status h1{font-size:22px}#status p{color:var(--muted)}
+#status h1{font-size:22px}#status p{color:var(--muted)}#status a{margin-top:18px}
 button{background:var(--panel);color:var(--fg);border:1px solid #2e313a;border-radius:8px;padding:6px 10px;font-size:14px}
 </style></head><body>
 <div id="spotL"></div><div id="spotR"></div>
 <div id="app">
  <div class="top"><span>Vuelta <b id="lap">–</b> · <b id="speed">–</b> km/h · M<b id="gear">–</b></span>
-  <span id="pos"></span><button id="fs">⛶</button></div>
+  <span id="pos"></span><span><a id="setupLink" href="/setup" style="display:none"><button>🛠</button></a>
+  <button id="fs">⛶</button></span></div>
  <div class="center">
   <div id="deltaRow"><div id="delta">–</div><div class="sectors" id="sectors"></div><div id="deltaSub"></div></div>
   <div id="banner" class="wide"></div>
@@ -164,7 +206,7 @@ button{background:var(--panel);color:var(--fg);border:1px solid #2e313a;border-r
   <div class="tile"><div class="k">Frenos °C</div><div class="wheels" id="brakes"></div></div>
  </div>
  <div class="top"><span id="cue"></span><span id="dmg"></span></div>
- <div id="status"><h1 id="st1"></h1><p id="st2"></p></div>
+ <div id="status"><h1 id="st1"></h1><p id="st2"></p><a id="setupLink2" href="/setup" style="display:none"><button>🛠 Editar el setup</button></a></div>
 </div>
 <script>
 const $=id=>document.getElementById(id);
@@ -175,6 +217,7 @@ function wheels(el,vals,states){el.innerHTML="";(vals||[null,null,null,null]).fo
  d.textContent=v==null?"–":Math.round(v);const s=states&&states[i];if(s)d.className=s;el.appendChild(d)})}
 async function tick(){
  let s;try{s=await(await fetch("/state",{cache:"no-store"})).json()}catch(e){show("Sin conexión con el coach","¿Está abierto el modo coach en el PC?");return}
+ $("setupLink").style.display=s.setup_ok?"":"none";
  if(s.status){show(s.status,s.sub||"");return}$("status").style.display="none";
  $("lap").textContent=s.lap??"–";$("speed").textContent=s.speed??"–";$("gear").textContent=s.gear??"–";
  const d=s.delta;$("delta").textContent=d==null?"–":sgn(d);$("delta").style.color=d==null?"var(--fg)":d<0?"var(--green)":"var(--red)";
@@ -200,7 +243,8 @@ async function tick(){
  const c=s.cue;$("cue").textContent=c?(c.braking?"frenando":"frenada en "+c.dist+" m"+(c.over>3?" · "+c.over+" km/h más rápido":"")):"";
  const dm=s.damage;$("dmg").textContent=dm&&(dm.level||dm.flat||dm.detached||dm.overheating)?"⚠ DAÑOS":"";$("dmg").style.color="var(--red)";
 }
-function show(a,b){$("status").style.display="flex";$("st1").textContent=a;$("st2").textContent=b}
+function show(a,b){$("status").style.display="flex";$("st1").textContent=a;$("st2").textContent=b;
+ $("setupLink2").style.display=$("setupLink").style.display}
 $("fs").onclick=()=>{const e=document.documentElement;(e.requestFullscreen||e.webkitRequestFullscreen||function(){}).call(e)};
 setInterval(tick,150);tick();
 </script></body></html>

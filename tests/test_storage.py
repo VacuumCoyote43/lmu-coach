@@ -224,6 +224,7 @@ FrontWheelTrackSetting=0//Non-adjustable
 RearAntiSwaySetting=3//P3 18x2mm
 [CONTROLS]
 RearBrakeSetting=20//52.0:48.0
+//FrontAntiSwaySetting=6//60 N/mm
 [FRONTLEFT]
 PressureSetting=0//136 kPa
 CamberSetting=12//-2.20 deg
@@ -245,6 +246,17 @@ Downforce=0.500000
         self.assertIn('Notes="prueba"', text)
         self.assertIn("RWSetting=19//7.6 deg", text)          # lo demás, tal cual
         self.assertEqual(svm.parse(out).entry("VM_REAR_ANTISWAY").index, 2)
+
+    def test_default_settings_are_commented_and_get_uncommented(self):
+        src = self.tmp / "a.svm"
+        src.write_text(self.SAMPLE, encoding="utf-8")
+        f = svm.parse(src)
+        e = f.entry("VM_FRONT_ANTISWAY")
+        self.assertEqual((e.index, e.text, e.default), (6, "60 N/mm", True))
+        e.new_index = 5
+        text = svm.save(f, self.tmp / "b").read_text(encoding="utf-8")
+        self.assertIn("\nFrontAntiSwaySetting=5//", text)
+        self.assertNotIn("//FrontAntiSwaySetting=6", text)
 
     def test_assistant_suggestions_respect_limits(self):
         from types import SimpleNamespace
@@ -283,6 +295,55 @@ class DashboardTest(unittest.TestCase):
             self.assertEqual(st["fuel"]["fuel_laps"], 7.5)
         finally:
             d.stop()
+
+    def test_save_setup_from_phone(self):
+        import json
+        import tempfile
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+        from pathlib import Path
+        from lmu_coach import dash_setup, dashboard, svm
+        tmp = Path(tempfile.mkdtemp())
+        settings = tmp / "Settings"
+        (settings / "Portimao").mkdir(parents=True)
+        src = tmp / "TempModFile.svm"
+        src.write_text(SvmTest.SAMPLE, encoding="utf-8")
+        old = (svm.settings_dir, svm.find_setups, dash_setup._context)
+        svm.settings_dir = lambda: settings
+        svm.find_setups = lambda: [src]
+        dash_setup._context = lambda: ([], lambda car: None)
+        d = dashboard.Dashboard(port=0)
+        d.start()
+        port = d._server.server_address[1]
+        base = f"http://127.0.0.1:{port}"
+        try:
+            with self.assertRaises(urllib.error.HTTPError):          # sin permiso: nada
+                urllib.request.urlopen(base + "/api/setups", timeout=5)
+            d.allow_setup = True
+            lst = json.loads(urllib.request.urlopen(base + "/api/setups", timeout=5).read())
+            self.assertEqual(lst["setups"][0]["path"], str(src))
+            got = json.loads(urllib.request.urlopen(base + "/api/setup?path=" + urllib.parse.quote(str(src)),
+                                                    timeout=5).read())
+            names = [i["key"] for g in got["groups"] for i in g["items"]]
+            self.assertIn("VM_REAR_ANTISWAY", names)
+            self.assertNotIn("VM_FRONT_WHEEL_TRACK", names)          # no ajustable
+
+            def post(body):
+                req = urllib.request.Request(base + "/api/setup/save", data=json.dumps(body).encode(),
+                                             headers={"Content-Type": "application/json"}, method="POST")
+                return json.loads(urllib.request.urlopen(req, timeout=5).read())
+            r = post({"path": str(src), "changes": {"VM_REAR_ANTISWAY": 4}, "name": "../menos barra",
+                      "folder": "Portimao"})
+            self.assertTrue(r.get("ok"), r)
+            out = settings / "Portimao" / "menos barra.svm"          # nombre limpio, siempre en su carpeta
+            self.assertIn("RearAntiSwaySetting=4//", out.read_text(encoding="utf-8"))
+            self.assertTrue(post({"path": str(src), "changes": {"VM_REAR_ANTISWAY": 5}, "name": "menos barra",
+                                  "folder": "Portimao"}).get("exists"))
+            self.assertIn("error", post({"path": str(tmp / "otro.svm"), "changes": {}, "folder": "Portimao"}))
+        finally:
+            d.stop()
+            svm.settings_dir, svm.find_setups, dash_setup._context = old
 
     def test_waiting_status(self):
         from lmu_coach import dashboard

@@ -1,6 +1,12 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.21.0": [
+        "📱🛠 Edita el setup desde el móvil: en el panel, el botón 🛠 abre el reglaje que tienes cargado en LMU (o uno "
+        "guardado), lo cambias con − y + dentro de los límites de tu coche y lo guardas en la carpeta del circuito "
+        "para cargarlo en el garaje. Actívalo en ⚙ Ajustes › General › Panel.",
+        "El editor de setups lee también los ajustes que LMU deja con su valor de serie (líneas comentadas).",
+    ],
     "1.20.0": [
         "🧾 Debrief de cada sesión: las 3 cosas que más tiempo te darían, ordenadas por lo que ganarías por vuelta, "
         "con un botón para cada una (practicar la curva, abrir el setup, ver la consistencia o fijar el objetivo). "
