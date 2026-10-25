@@ -32,14 +32,46 @@ def is_downloaded(size: str) -> bool:
     return (d / "model.bin").is_file() and (d / "config.json").is_file()
 
 
-def download(size: str, progress=None) -> str | None:
-    """Descarga el modelo (una vez). Devuelve un error en texto o None si todo bien."""
+FILES = ("config.json", "model.bin", "tokenizer.json", "vocabulary.txt")
+REPO = "https://huggingface.co/Systran/faster-whisper-{size}/resolve/main/{name}"
+
+
+def download(size: str, progress=None, cancel=None) -> str | None:
+    """Descarga el modelo (una vez) a la carpeta de datos. progress(hechos, total) en bytes; cancel() → True
+    para parar. Devuelve un error en texto o None si todo bien. Cada archivo se baja a .part y se renombra
+    al terminar: una descarga cortada no deja un modelo roto."""
+    import urllib.request
+    d = _model_dir(size)
+    d.mkdir(parents=True, exist_ok=True)
     try:
-        from huggingface_hub import snapshot_download
-        _model_dir(size).mkdir(parents=True, exist_ok=True)
-        snapshot_download(f"Systran/faster-whisper-{size}", local_dir=str(_model_dir(size)),
-                          allow_patterns=["config.json", "model.bin", "tokenizer.json", "vocabulary.*",
-                                          "preprocessor_config.json"])
+        sizes = {}
+        for name in FILES:                       # tamaños primero, para que la barra sepa el total
+            req = urllib.request.Request(REPO.format(size=size, name=name), method="HEAD")
+            with urllib.request.urlopen(req, timeout=20) as r:
+                sizes[name] = int(r.headers.get("Content-Length") or 0)
+        total, done = sum(sizes.values()), 0
+        for name in FILES:
+            dest = d / name
+            if dest.is_file() and dest.stat().st_size == sizes[name]:
+                done += sizes[name]
+                if progress:
+                    progress(done, total)
+                continue
+            part = dest.with_suffix(dest.suffix + ".part")
+            with urllib.request.urlopen(REPO.format(size=size, name=name), timeout=30) as r, open(part, "wb") as f:
+                while True:
+                    if cancel and cancel():
+                        f.close()
+                        part.unlink(missing_ok=True)
+                        return "Descarga cancelada"
+                    chunk = r.read(1 << 18)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    done += len(chunk)
+                    if progress:
+                        progress(done, total)
+            part.replace(dest)
         return None if is_downloaded(size) else "La descarga no se completó"
     except Exception as e:
         return f"No se pudo descargar el modelo: {e}"

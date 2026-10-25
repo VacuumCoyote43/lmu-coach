@@ -118,6 +118,14 @@ class RadioTab(QWidget):
         self.wrow_label = QLabel("Modelo de Whisper:")
         f.addRow(self.wrow_label, wrow)
         f.addRow("", self.wstatus)
+        self.wbar = QProgressBar()
+        self.wbar.setRange(0, 1000)
+        self.wbar.setTextVisible(True)
+        self.wbar.setFormat("%p %")
+        self.wbar.setFixedHeight(18)
+        self.wbar.setStyleSheet("QProgressBar { max-height: 18px; text-align: center; border-radius: 4px; }")
+        self.wbar.hide()
+        f.addRow("", self.wbar)
         self._show_whisper()
         conf = QDoubleSpinBox()
         conf.setRange(0.2, 0.9)
@@ -314,19 +322,32 @@ class RadioTab(QWidget):
         from .. import whisper_asr as W
         size = self.wmodel.currentData()
         self.wdl.setEnabled(False)
-        self.wstatus.setText(f"Descargando «{size}»… (puede tardar un poco)")
+        self.wmodel.setEnabled(False)
+        self.wstatus.setText(f"Descargando «{size}»…")
         self._dl_result = None
+        self._dl_progress = (0, 0)
+        self._dl_cancel = False
+        self.wbar.setValue(0)
+        self.wbar.show()
 
         def work():
-            self._dl_result = W.download(size) or "ok"
+            self._dl_result = W.download(size, lambda d, t: setattr(self, "_dl_progress", (d, t)),
+                                         lambda: self._dl_cancel) or "ok"
         threading.Thread(target=work, daemon=True).start()
         self._dl_timer = QTimer(self, interval=300, timeout=self._download_poll)
         self._dl_timer.start()
 
     def _download_poll(self):
+        done, total = self._dl_progress
+        if total:
+            self.wbar.setValue(int(done * 1000 / total))
+            self.wstatus.setText(f"Descargando «{self.wmodel.currentData()}»… {done / 2**20:.0f} de "
+                                 f"{total / 2**20:.0f} MB")
         if self._dl_result is None:
             return
         self._dl_timer.stop()
+        self.wbar.hide()
+        self.wmodel.setEnabled(True)
         if self._dl_result != "ok":
             self.wstatus.setText(f"<span style='color:#ff5a5a'>{self._dl_result}</span>")
             self.wdl.setEnabled(True)
@@ -429,6 +450,7 @@ class RadioTab(QWidget):
             self.mic = None
 
     def close_listener(self):
+        self._dl_cancel = True          # si se cierra Ajustes a mitad de descarga, se para
         self._mic_stop()
         if self.listener:
             self.listener.close()

@@ -1,6 +1,9 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.18.1": [
+        "Ajustes › Radio: barra de progreso al descargar el modelo de Whisper, con los MB que van y los que faltan.",
+    ],
     "1.18.0": [
         "La radio con el ingeniero usa Whisper: entiende mucho mejor, también con ruido, sin internet. Descarga el "
         "modelo una vez en ⚙ Ajustes › Radio (el «base», ~145 MB, responde en medio segundo).",
