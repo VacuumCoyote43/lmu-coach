@@ -48,6 +48,15 @@ class AnalysisTest(unittest.TestCase):
         self.assertTrue(r.corners)
         self.assertTrue(r.verdict())
 
+    def test_debrief_gives_actions(self):
+        from lmu_coach import debrief
+        from lmu_coach.sessions import SessionData
+        d = debrief.build(SessionData(SESSIONS[0]))
+        self.assertTrue(d.headline)
+        self.assertLessEqual(len(d.actions), 3)
+        self.assertTrue(all(a.gain >= 0 and a.title and a.button for a in d.actions))
+        self.assertEqual(d.actions, sorted(d.actions, key=lambda a: -a.gain))
+
     def test_coach_lap_from_history(self):
         from lmu_coach.sessions import SessionData
         info = SESSIONS[0]

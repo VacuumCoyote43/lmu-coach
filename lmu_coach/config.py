@@ -29,6 +29,8 @@ DEFAULT_CONFIG = {
     "msgs": {},              # {clave: True/False} para cada mensaje del catálogo
     # radio con el ingeniero: botón para hablar, frases y respuestas (vacío = las de serie)
     "radio": {"on": False, "button": None, "min_conf": 0.45, "beep": True, "commands": []},
+    # panel en el móvil: página web en la red de casa mientras el coach está abierto
+    "dash": {"on": False, "port": 8765},
 }
 
 

@@ -264,6 +264,31 @@ Downforce=0.500000
         self.assertEqual(svm.guess_track_folder("Autódromo José Carlos Pace", folders), "Interlagos")
 
 
+class DashboardTest(unittest.TestCase):
+    def test_serves_page_and_state(self):
+        import json
+        import urllib.request
+        from lmu_coach import dashboard
+        d = dashboard.Dashboard(port=0)
+        self.assertTrue(d.start())
+        port = d._server.server_address[1]
+        try:
+            d.state = dashboard.snapshot({"lap": 3, "speed": 201.4, "gear": 5, "delta": -0.21,
+                                          "sectors": {"cur": [None, None, None]}, "fuel": {"fuel_laps": 7.5}},
+                                         {"flag": None, "last": 106.2})
+            page = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read().decode("utf-8")
+            self.assertIn("LMU Coach · Panel", page)
+            st = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/state", timeout=5).read())
+            self.assertEqual((st["lap"], st["speed"], st["delta"], st["last"]), (3, 201, -0.21, 106.2))
+            self.assertEqual(st["fuel"]["fuel_laps"], 7.5)
+        finally:
+            d.stop()
+
+    def test_waiting_status(self):
+        from lmu_coach import dashboard
+        self.assertEqual(dashboard.snapshot({"status": "Esperando"}, {}), {"status": "Esperando", "sub": ""})
+
+
 class LogTest(TempDirTest):
     def test_repeated_warning_written_once(self):
         import logging

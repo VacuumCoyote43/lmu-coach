@@ -12,3 +12,5 @@ winrt-Windows.Globalization>=3.0
 faster-whisper>=1.0
 # voces neuronales de Edge para el coach
 edge-tts>=6.1
+# código QR del panel del móvil
+segno>=1.5

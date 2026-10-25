@@ -3,7 +3,7 @@ import argparse
 import threading
 import time
 
-from . import corners, goals, pitplan, racelog, radio, training
+from . import corners, dashboard, goals, pitplan, racelog, radio, training
 from .engineer import Engineer
 from .spotter import DamageWatch, Spotter
 from .coach import LiveCoach, spoken_tip
@@ -94,6 +94,9 @@ class App:
         self.pit_text = None          # la misma, en frase (para la radio)
         self.session_best = None      # tu mejor vuelta válida de esta sesión
         self.radio = radio.Radio()
+        self.dash = None              # panel en el móvil (servidor web en la red de casa)
+        self._last_lap = {}           # última vuelta completa (para el panel: se queda fija)
+        self._dash_next = 0.0
         self._pit_said = set()
         self._race_saved = False
         self._spoken_corner = None
@@ -113,6 +116,7 @@ class App:
         self._last_et = None
         self._beeped_zone = None
         self._apply_config()
+        self._apply_dash()
 
     # --- configuración (la ventana de Ajustes de la app la cambia mientras el coach está abierto) ----
 
@@ -133,6 +137,53 @@ class App:
         except Exception:
             warn_once("overlay-cfg", "No se pudo aplicar la configuración al overlay")
 
+    def _apply_dash(self):
+        d = self.cfg.get("dash") or {}
+        port = int(d.get("port") or dashboard.DEFAULT_PORT)
+        if d.get("on") and (self.dash is None or self.dash.port != port):
+            if self.dash:
+                self.dash.stop()
+            self.dash = dashboard.Dashboard(port)
+            if self.dash.start():
+                url = (dashboard.urls(port) or [f"http://localhost:{port}"])[0]
+                self.overlay.toast(f"📱 Panel: {url}", "#3fb6ff", 8)
+            else:
+                self.overlay.toast(self.dash.error, AMBER, 8)
+                self.dash = None
+        elif not d.get("on") and self.dash:
+            self.dash.stop()
+            self.dash = None
+
+    def _draw(self, st: dict):
+        """Dibuja el overlay y pasa lo mismo al panel del móvil (como mucho 10 veces por segundo)."""
+        self.overlay.draw(st)
+        if self.dash is None:
+            return
+        now = time.monotonic()
+        if now < self._dash_next:
+            return
+        self._dash_next = now + 0.1
+        try:
+            info = getattr(self.engineer, "last_info", None)
+            extra = {"flag": self._flag_banner(info), "best": self.session_best, "goal": self.goal,
+                     "time_left": info.time_left if info and info.is_race else None, **self._last_lap}
+            self.dash.state = dashboard.snapshot(st, extra)
+        except Exception:
+            warn_once("panel", "No se pudo preparar el panel del móvil")
+
+    def _flag_banner(self, info):
+        if info is None or not info.is_race:
+            return None
+        if info.phase == 6:
+            return {"text": "AMARILLA · NO ADELANTES", "color": "#ffd400"}
+        me = getattr(self.engineer, "_me", None)
+        if me is not None and me.flag == 6:
+            return {"text": "BANDERA AZUL", "color": "#3fb6ff"}
+        secs = [i + 1 for i, f in enumerate(info.sector_flags) if f]
+        if secs:
+            return {"text": "AMARILLA · SECTOR " + " Y ".join(map(str, secs)), "color": "#ffd400"}
+        return None
+
     def _watch_config(self):
         """Si el archivo de configuración ha cambiado (Ajustes de la app), recargarlo y aplicarlo."""
         now = time.monotonic()
@@ -149,6 +200,7 @@ class App:
         self.cfg.update(new)
         self._apply_config()
         self._resolve_practice()
+        self._apply_dash()
         self.overlay.toast("Ajustes actualizados", MUTED, 2)
 
     def _resolve_practice(self):
@@ -242,6 +294,8 @@ class App:
     def close(self):
         self._save_config()
         self.radio.close()
+        if self.dash:
+            self.dash.stop()
         self.speaker.close()
         self.reader.close()
         self.overlay.root.destroy()
@@ -262,11 +316,11 @@ class App:
             self._placed = self._place_on_game_screen()
         s = self.reader.read()
         if s is None:
-            self.overlay.draw({"status": "Esperando a Le Mans Ultimate…",
+            self._draw({"status": "Esperando a Le Mans Ultimate…",
                                "substatus": "Abre el juego y sal a pista. Si ya lo está, usa «Diagnóstico» en la app."})
             return
         if not s.in_realtime:
-            self.overlay.draw({"status": "En el monitor / garaje", "substatus": f"{s.track} · {s.car}"})
+            self._draw({"status": "En el monitor / garaje", "substatus": f"{s.track} · {s.car}"})
             return
 
         self._ensure_reference(s.track, s.car)
@@ -299,7 +353,7 @@ class App:
 
         ref = self.coach.ref
         sec = self.coach.sectors
-        self.overlay.draw({
+        self._draw({
             "lap": s.lap,
             "speed": s.speed,
             "gear": s.gear,
@@ -376,6 +430,9 @@ class App:
         if lap:
             sec.learn_bounds(lap.sectors)
         is_best = valid and (self.ref_time is None or lap_time < self.ref_time)
+        if lap_time > LapRecorder.MIN_LAP_TIME:
+            self._last_lap = {"last": lap_time, "last_best": is_best,
+                              "last_diff": lap_time - self.ref_time if self.ref_time else None}
         if valid and lap_time > LapRecorder.MIN_LAP_TIME and (self.session_best is None or lap_time < self.session_best):
             self.session_best = lap_time
         diff = lap_time - self.ref_time if self.ref_time else None

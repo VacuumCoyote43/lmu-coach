@@ -237,6 +237,37 @@ class SettingsDialog(QDialog):
         g.addRow(_note("Para verlo encima del juego, LMU debe estar en «Ventana sin bordes». Clic derecho en el "
                        "overlay para el menú rápido; arrástralo para moverlo."))
 
+        dash = QGroupBox("📱 Panel en el móvil o la tablet")
+        dv = QVBoxLayout(dash)
+        dv.addWidget(_note("Con el modo coach abierto, abre esta dirección en el navegador del móvil (en la misma "
+                           "wifi que el PC) y tendrás delta, combustible, estrategia, diferencias, temperaturas y "
+                           "banderas como en la pantalla de un volante. No hay que instalar nada en el móvil."))
+        d = dict(self.cfg.get("dash") or {})
+        drow = QHBoxLayout()
+        self.dash_on = QCheckBox("Panel activado")
+        self.dash_on.setChecked(bool(d.get("on")))
+        drow.addWidget(self.dash_on)
+        drow.addWidget(QLabel("Puerto:"))
+        self.dash_port = QSpinBox()
+        self.dash_port.setRange(1025, 65000)
+        self.dash_port.setValue(int(d.get("port") or 8765))
+        self.dash_port.setFixedWidth(90)
+        drow.addWidget(self.dash_port)
+        drow.addStretch(1)
+        dv.addLayout(drow)
+        qrow = QHBoxLayout()
+        self.dash_qr = QLabel()
+        self.dash_qr.setFixedSize(150, 150)
+        qrow.addWidget(self.dash_qr)
+        self.dash_url = QLabel()
+        self.dash_url.setWordWrap(True)
+        self.dash_url.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        qrow.addWidget(self.dash_url, 1)
+        dv.addLayout(qrow)
+        self.dash_on.toggled.connect(self._dash_changed)
+        self.dash_port.valueChanged.connect(self._dash_changed)
+        self._show_dash()
+
         other = QGroupBox("Otros")
         h = QHBoxLayout(other)
         backup = QPushButton("💾  Copia de seguridad…")
@@ -246,7 +277,7 @@ class SettingsDialog(QDialog):
         h.addWidget(backup)
         h.addWidget(wiz)
         h.addStretch(1)
-        return self._page(voice, ov, other)
+        return self._page(voice, ov, dash, other)
 
     def _spotter_tab(self):
         on = QGroupBox("Spotter")
@@ -326,6 +357,38 @@ class SettingsDialog(QDialog):
             self.voice_combo.setCurrentText(cur)
         self.voice_combo.setEnabled(True)
         self.voice_combo.blockSignals(False)
+
+    def _dash_changed(self, *_):
+        self._set("dash", {"on": self.dash_on.isChecked(), "port": self.dash_port.value()})
+        self._show_dash()
+
+    def _show_dash(self):
+        from .. import dashboard
+        on, port = self.dash_on.isChecked(), self.dash_port.value()
+        urls = dashboard.urls(port)
+        self.dash_qr.setVisible(on and bool(urls))
+        if not on:
+            self.dash_url.setText("")
+            return
+        if not urls:
+            self.dash_url.setText("<span style='color:#ffb020'>No encuentro la red de este PC.</span>")
+            return
+        self.dash_url.setText(f"<span style='font-size:13pt; font-weight:600'>{urls[0]}</span><br>"
+                              + ("".join(f"<br>o {u}" for u in urls[1:3])) +
+                              "<br><br>Escanea el código con la cámara del móvil. La primera vez que abras el coach, "
+                              "Windows puede preguntar si dejas a LMU Coach usar la red: di que sí (redes privadas). "
+                              "Funciona mientras el modo coach está abierto.")
+        try:
+            import io
+            import segno
+            from PySide6.QtGui import QPixmap
+            buf = io.BytesIO()
+            segno.make(urls[0], error="m").save(buf, kind="png", scale=5, border=2, dark="#000000", light="#ffffff")
+            pix = QPixmap()
+            pix.loadFromData(buf.getvalue(), "PNG")
+            self.dash_qr.setPixmap(pix.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        except Exception:
+            self.dash_qr.hide()
 
     def _show_prewarm(self):
         """Avance de las frases urgentes de la voz neural (se generan al elegirla)."""

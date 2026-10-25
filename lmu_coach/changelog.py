@@ -1,6 +1,13 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.20.0": [
+        "🧾 Debrief de cada sesión: las 3 cosas que más tiempo te darían, ordenadas por lo que ganarías por vuelta, "
+        "con un botón para cada una (practicar la curva, abrir el setup, ver la consistencia o fijar el objetivo). "
+        "Al aparecer una sesión nueva, abajo a la derecha sale un botón para verlo.",
+        "📱 Panel en el móvil o la tablet: abre en el navegador la dirección de ⚙ Ajustes › General (o escanea el QR) "
+        "y tendrás delta, sectores, combustible, estrategia, diferencias, temperaturas, banderas y spotter.",
+    ],
     "1.19.0": [
         "Voces neuronales de Microsoft Edge para el coach (Álvaro, Elvira, Ximena…): casi humanas. Elígelas en "
         "⚙ Ajustes › General › Voz.",
