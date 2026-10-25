@@ -46,6 +46,13 @@ class Sample:
     tyre_temp: list | None = None    # °C por rueda (media de la banda: interior, centro, exterior)
     tyre_opt: float | None = None    # °C óptimos del compuesto según el juego
     brake_temp: list | None = None   # °C por rueda
+    tyre_pressure: list | None = None   # kPa por rueda
+    tyre_wear: list | None = None    # fracción que queda por rueda (1 = nuevo)
+    water_temp: float | None = None  # °C
+    oil_temp: float | None = None    # °C
+    track_temp: float | None = None  # °C
+    air_temp: float | None = None    # °C
+    rain: float | None = None        # 0..1
 
 
 def _celsius(v: float) -> float:
@@ -165,6 +172,10 @@ class LMUReader:
             tyre_temp=[_celsius(sum(w.mTemperature) / 3) for w in tel.mWheel],
             tyre_opt=_opt_temp(tel.mWheel[0].mOptimalTemp),
             brake_temp=[w.mBrakeTemp for w in tel.mWheel],
+            tyre_pressure=[w.mPressure for w in tel.mWheel],
+            tyre_wear=[w.mWear for w in tel.mWheel],
+            water_temp=tel.mEngineWaterTemp, oil_temp=tel.mEngineOilTemp,
+            track_temp=si.mTrackTemp, air_temp=si.mAmbientTemp, rain=si.mRaining,
         )
 
     def _telem_all(self):
@@ -365,4 +376,7 @@ class DemoReader:
             tyre_temp=[78 + 6 * math.sin(now / 9 + k) + (4 if k < 2 else 0) for k in range(4)],
             tyre_opt=80.0,
             brake_temp=[300 + 420 * brk + (60 if k < 2 else 0) for k in range(4)],
+            tyre_pressure=[171.0, 172.0, 166.0, 167.0],
+            tyre_wear=[max(0.0, 1 - 0.012 * (self._lap + self._dist / self.TRACK_LEN)) for _ in range(4)],
+            water_temp=92.0, oil_temp=104.0, track_temp=31.0, air_temp=22.0, rain=0.0,
         )

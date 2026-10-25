@@ -230,6 +230,8 @@ class Engineer:
             out.append(("Última vuelta", "lastlap"))
 
         self.state = {"pos": pos, "of": len(mine), "cls": me.cls, "ahead": g_ahead, "behind": g_behind,
+                      "ahead_name": ahead.driver if ahead else None, "behind_name": behind.driver if behind else None,
+                      "stops": me.pitstops,
                       "trend_ahead": self._trend(ahead.driver) if ahead else None,
                       "trend_behind": self._trend(behind.driver) if behind else None}
         return [x for x in out if x and x[0]]

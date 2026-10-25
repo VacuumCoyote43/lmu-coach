@@ -3,7 +3,7 @@ import argparse
 import threading
 import time
 
-from . import corners, goals, pitplan, racelog, training
+from . import corners, goals, pitplan, racelog, radio, training
 from .engineer import Engineer
 from .spotter import DamageWatch, Spotter
 from .coach import LiveCoach, spoken_tip
@@ -91,6 +91,9 @@ class App:
         self._summary_due = None
         self._race_next = 0.0
         self.pit_state = None         # estrategia en directo (para el overlay)
+        self.pit_text = None          # la misma, en frase (para la radio)
+        self.session_best = None      # tu mejor vuelta válida de esta sesión
+        self.radio = radio.Radio()
         self._pit_said = set()
         self._race_saved = False
         self._spoken_corner = None
@@ -164,6 +167,63 @@ class App:
             if self._practice is not None:
                 self.overlay.toast(f"Modo práctica: {p.get('name') or 'curva ' + str(self._practice)}", "#ffb020", 6)
 
+    # --- radio con el ingeniero ---------------------------------------------------
+
+    def _radio_step(self):
+        r = self.cfg.get("radio") or {}
+        if not r.get("on"):
+            return
+        try:
+            ev = self.radio.update(self.cfg, self._snapshot)
+        except Exception:
+            warn_once("radio", "Falló la radio con el ingeniero")
+            return
+        if ev is None:
+            return
+        kind, text = ev
+        if kind == "listening":
+            self.voice.paused = True
+            self.overlay.toast("🎙 Te escucho…", "#3fb6ff", 3)
+            if r.get("beep", True):
+                import winsound
+                threading.Thread(target=winsound.Beep, args=(880, 70), daemon=True).start()
+            return
+        self.voice.paused = False
+        if kind == "answer":
+            self.overlay.toast(f"📻 {text}", "#3fb6ff", 6)
+            self.voice.say(text, interrupt=True)
+        elif self.radio.listener.error:
+            self.overlay.toast(f"Radio: {self.radio.listener.error}", AMBER, 6)
+        else:
+            self.overlay.toast(f"📻 No te he entendido{': ' + text if text else ''}", AMBER, 4)
+            self.voice.say("No te he entendido", interrupt=True)
+
+    def _snapshot(self) -> dict:
+        """Todos los datos del momento, para las respuestas de la radio."""
+        s, eng = self._cur, self.engineer
+        fuel_pl, ve_pl = self._per_lap()
+        info = getattr(eng, "last_info", None)
+        race = eng.state if eng.state else None
+        return {
+            "fuel": s.fuel if s else None, "fuel_pl": fuel_pl, "ve": s.ve if s else None, "ve_pl": ve_pl,
+            "tyre_temp": s.tyre_temp if s else None, "tyre_opt": s.tyre_opt if s else None,
+            "tyre_pressure": s.tyre_pressure if s else None, "tyre_wear": s.tyre_wear if s else None,
+            "brake_temp": s.brake_temp if s else None, "water": s.water_temp if s else None,
+            "oil": s.oil_temp if s else None, "track_temp": s.track_temp if s else None,
+            "air_temp": s.air_temp if s else None, "rain": s.rain if s else None,
+            "damage": self.damage.state if self.damage.state and (self.damage.state.get("level") or
+                                                                 any(v for k, v in self.damage.state.items()
+                                                                     if k != "level")) else None,
+            "lap": s.lap if s else None, "last_lap": s.last_lap_time if s else None,
+            "best_lap": self.session_best, "ref_time": self.ref_time, "delta": self.coach.delta,
+            "ideal": self.coach.sectors.ideal(), "goal": self.goal,
+            "race": race, "ahead_name": race.get("ahead_name") if race else None,
+            "behind_name": race.get("behind_name") if race else None,
+            "time_left": info.time_left if info and info.is_race else None,
+            "laps_left": info.laps_left if info and info.is_race else None,
+            "pit_text": self.pit_text if race else None, "stops": race.get("stops") if race else None,
+        }
+
     def _save_config(self):
         save_config(self.cfg)
         self._cfg_mtime = config_mtime()
@@ -181,6 +241,7 @@ class App:
 
     def close(self):
         self._save_config()
+        self.radio.close()
         self.speaker.close()
         self.reader.close()
         self.overlay.root.destroy()
@@ -195,6 +256,7 @@ class App:
 
     def _step(self):
         self._watch_config()
+        self._radio_step()
         if not self._placed and time.monotonic() >= self._place_next:
             self._place_next = time.monotonic() + 3
             self._placed = self._place_on_game_screen()
@@ -314,6 +376,8 @@ class App:
         if lap:
             sec.learn_bounds(lap.sectors)
         is_best = valid and (self.ref_time is None or lap_time < self.ref_time)
+        if valid and lap_time > LapRecorder.MIN_LAP_TIME and (self.session_best is None or lap_time < self.session_best):
+            self.session_best = lap_time
         diff = lap_time - self.ref_time if self.ref_time else None
         # Solo enseñamos en grande vueltas que hemos visto de principio a fin
         if self.recorder.started_clean and lap_time > LapRecorder.MIN_LAP_TIME:
@@ -530,6 +594,7 @@ class App:
             return
         rejoin = None if p.makes_it else eng.pit_rejoin(float(self.cfg.get("eng_pit_loss", 30.0)))
         self.pit_state = {"stop_in": p.stop_in, "add_fuel": p.add_fuel, "ve_target": p.ve_target, "rejoin": rejoin}
+        self.pit_text = pitplan.spoken(p, rejoin)
         if me.laps < 1 or not (self.fuel_laps or self.ve_laps):
             return      # aún sin una vuelta de consumo real: el cálculo no es fiable
         stint = me.pitstops

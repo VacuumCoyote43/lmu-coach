@@ -199,6 +199,7 @@ class VoiceQueue:
         self.queue = []          # [prioridad, creado, caduca, tipo, texto]
         self.busy_until = 0.0
         self.log = None          # lista para pruebas: (instante, texto)
+        self.paused = False      # mientras hablas por radio: lo que no es urgente espera
 
     def _duration(self, text: str) -> float:
         return 0.25 + len(text) / (CHARS_PER_S * max(0.5, self.sp.rate))
@@ -223,7 +224,7 @@ class VoiceQueue:
     def tick(self, now=None):
         now = _time.monotonic() if now is None else now
         self.queue = [m for m in self.queue if m[2] > now]
-        if not self.queue or now < self.busy_until:
+        if not self.queue or now < self.busy_until or self.paused:
             return
         self.queue.sort(key=lambda m: (-m[0], m[1]))
         m = self.queue.pop(0)

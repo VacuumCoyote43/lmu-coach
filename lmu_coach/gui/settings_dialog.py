@@ -27,7 +27,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None, tab: str | None = None):
         super().__init__(parent)
         self.setWindowTitle("Ajustes")
-        self.resize(820, 680)
+        self.resize(860, 780)
         self.cfg = C.load_config()
         self.msg_boxes: dict[str, QCheckBox] = {}
         self._dirty, self._dirty_msgs = {}, {}
@@ -47,8 +47,12 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._engineer_tab(), "Ingeniero")
         self.tabs.addTab(self._coach_tab(), "Coach")
         self.tabs.addTab(self._car_tab(), "Coche")
+        from .radio_tab import RadioTab
+        self.radio_tab = RadioTab(self.cfg, self._play)
+        self.radio_tab.changed.connect(lambda r: self._set("radio", r))
+        self.tabs.addTab(self.radio_tab, "📻 Radio")
         lay.addWidget(self.tabs, 1)
-        names = {"general": 0, "spotter": 1, "engineer": 2, "coach": 3, "car": 4}
+        names = {"general": 0, "spotter": 1, "engineer": 2, "coach": 3, "car": 4, "radio": 5}
         if tab in names:
             self.tabs.setCurrentIndex(names[tab])
 
@@ -94,6 +98,7 @@ class SettingsDialog(QDialog):
             self._save()
         self._voice_poll.stop()
         self.speaker.close()
+        self.radio_tab.close_listener()
         super().done(r)
 
     # --- piezas ---------------------------------------------------------------
@@ -337,6 +342,9 @@ class SettingsDialog(QDialog):
 
     def _reset_tab(self):
         i = self.tabs.currentIndex()
+        if self.tabs.widget(i) is self.radio_tab:
+            self.radio_tab.reset()
+            return
         for k in self.TAB_KEYS[i]:
             w = self._widgets.get(k)
             d = C.DEFAULT_CONFIG[k]

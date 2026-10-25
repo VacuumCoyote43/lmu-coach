@@ -298,6 +298,73 @@ class SetupLimitsTest(unittest.TestCase):
         self.assertEqual((out[0].priority, out[0].title), (2, "El ABS trabaja mucho"))
 
 
+class RadioTest(unittest.TestCase):
+    SNAP = {"fuel": 23.43, "fuel_pl": 2.91, "race": {"pos": 4, "of": 12, "cls": "GT3", "ahead": 1.23,
+                                                     "behind": None, "trend_ahead": -0.31}, "ahead_name": "Rossi"}
+
+    def test_templates_fill_and_skip_missing_parts(self):
+        from lmu_coach import radio as R
+        self.assertEqual(R.render("{combustible}, para {combustible_vueltas}", self.SNAP), "23,4 litros, para 8 vueltas")
+        self.assertEqual(R.render("{nombre_delante} a {delante}. {tendencia_delante}", self.SNAP),
+                         "Rossi a 1,2 segundos. Recortas 0,3 por vuelta")
+        self.assertEqual(R.render("Posición {posicion}, detrás {detras}", self.SNAP), "Posición 4 de 12 en GT3")
+        self.assertEqual(R.render("{energia}", self.SNAP), "Sin datos ahora")
+        self.assertTrue(all(R.render("{" + f.key + "}", {}, examples=True) for f in R.FIELDS))
+
+    def test_phrases_match_without_accents_or_case(self):
+        from lmu_coach import radio as R
+        self.assertEqual(R.find_command("Cuanto combustible me queda", R.DEFAULT_COMMANDS)["say"],
+                         "{combustible}, para {combustible_vueltas}")
+        self.assertIsNone(R.find_command("pon música", R.DEFAULT_COMMANDS))
+        self.assertIn("cuándo paro", R.all_phrases(R.DEFAULT_COMMANDS))
+
+    def test_push_to_talk_flow(self):
+        import queue
+        from lmu_coach import radio as R
+
+        class FakeListener:
+            def __init__(self):
+                self.results, self.on, self.error = queue.Queue(), None, None
+            def start(self, phrases):
+                self.phrases = phrases
+            def listen(self, on):
+                self.on = on
+            def close(self):
+                pass
+
+        held = [False]
+        old = R.button_down
+        R.button_down = lambda b: held[0]
+        try:
+            radio = R.Radio(FakeListener())
+            cfg = {"radio": {"on": True, "button": {"type": "key", "vk": 0x70}, "commands": R.DEFAULT_COMMANDS}}
+            snap = lambda: self.SNAP
+            self.assertIsNone(radio.update(cfg, snap, now=0))
+            held[0] = True
+            self.assertEqual(radio.update(cfg, snap, now=1), ("listening", ""))
+            self.assertTrue(radio.listener.on)
+            radio.listener.results.put(("cuánto combustible me queda", 0.8))
+            held[0] = False
+            self.assertEqual(radio.update(cfg, snap, now=1.5), ("answer", "23,4 litros, para 8 vueltas"))
+            self.assertFalse(radio.listener.on)
+            # «repite» y una frase dicha con poca seguridad
+            held[0] = True
+            radio.update(cfg, snap, now=3)
+            radio.listener.results.put(("repite", 0.9))
+            self.assertEqual(radio.update(cfg, snap, now=3.2), ("answer", "23,4 litros, para 8 vueltas"))
+            held[0] = True
+            radio.update(cfg, snap, now=4)    # sigue pulsado: no vuelve a empezar
+            held[0] = False
+            radio.update(cfg, snap, now=5)
+            held[0] = True
+            radio.update(cfg, snap, now=6)
+            radio.listener.results.put(("posición", 0.2))
+            held[0] = False
+            self.assertEqual(radio.update(cfg, snap, now=6.3), ("unknown", "posición"))
+        finally:
+            R.button_down = old
+
+
 class SpotterTest(unittest.TestCase):
     def drive_circle(self, mirror):
         """Giro a la derecha en un círculo, con un rival por fuera y otro por dentro; el mundo puede ir espejado."""

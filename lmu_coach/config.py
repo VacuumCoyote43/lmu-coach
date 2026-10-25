@@ -27,6 +27,8 @@ DEFAULT_CONFIG = {
     "delta_every": 0,        # decir el delta con tu referencia cada N sectores (0 = nunca)
     "practice_corner": None,  # modo práctica: {"track", "car", "apex", "name"}; solo se habla de esa curva
     "msgs": {},              # {clave: True/False} para cada mensaje del catálogo
+    # radio con el ingeniero: botón para hablar, frases y respuestas (vacío = las de serie)
+    "radio": {"on": False, "button": None, "min_conf": 0.45, "beep": True, "commands": []},
 }
 
 
