@@ -233,24 +233,36 @@ def _fz(zs):
     return ", ".join(f"F{z.idx}" for z in zs)
 
 
+# Cada cambio: (nombre, ajuste, clave del reglaje, sentido en posiciones de LMU). Comprobado con sesiones
+# reales: subir la posición del reparto lo lleva atrás, la de las tomas de freno las cierra, la de la caída la
+# hace menos negativa y la de presiones, barras, alerón y TC las sube.
+BB_BACK = ("Reparto de frenada", "0,5–1 % más atrás", "VM_BRAKE_BALANCE", +1)
+BB_FWD = ("Reparto de frenada", "0,5–1 % más adelante", "VM_BRAKE_BALANCE", -1)
+ARB_F_SOFT = ("Barra estabilizadora del.", "un punto más blanda", "VM_FRONT_ANTISWAY", -1)
+ARB_R_SOFT = ("Barra estabilizadora tras.", "un punto más blanda", "VM_REAR_ANTISWAY", -1)
+ARB_R_STIFF = ("Barra estabilizadora tras.", "un punto más dura", "VM_REAR_ANTISWAY", +1)
+TC_UP = ("Control de tracción", "+1", "VM_TRACTIONCONTROLMAP", +1)
+
 BALANCE_RULES = [
     ("entry", +1, "Subviraje al entrar en las curvas",
-     [("Reparto de frenada", "0,5–1 % más atrás"), ("Freno motor", "+1 (más retención)"),
-      ("Diferencial en retención", "menos bloqueo"), ("Barra estabilizadora del.", "un punto más blanda")]),
+     [BB_BACK, ("Freno motor", "+1 (más retención)", "VM_ENGINE_BRAKEMAP", 0),
+      ("Diferencial en retención", "menos bloqueo", "VM_DIFF_COAST", -1), ARB_F_SOFT]),
     ("entry", -1, "Sobreviraje al entrar en las curvas (la trasera se va al frenar)",
-     [("Reparto de frenada", "0,5–1 % más adelante"), ("Freno motor", "-1 (menos retención)"),
-      ("Diferencial en retención", "más bloqueo")]),
+     [BB_FWD, ("Freno motor", "-1 (menos retención)", "VM_ENGINE_BRAKEMAP", 0),
+      ("Diferencial en retención", "más bloqueo", "VM_DIFF_COAST", +1)]),
     ("mid", +1, "Subviraje en el vértice",
-     [("Barra estabilizadora del.", "un punto más blanda"), ("Barra estabilizadora tras.", "un punto más dura"),
-      ("Alerón trasero", "un punto menos (o el delantero uno más)")]),
+     [ARB_F_SOFT, ARB_R_STIFF, ("Alerón trasero", "un punto menos", "VM_REAR_WING", -1)]),
     ("mid", -1, "Sobreviraje en el vértice",
-     [("Barra estabilizadora tras.", "un punto más blanda"), ("Alerón trasero", "un punto más")]),
+     [ARB_R_SOFT, ("Alerón trasero", "un punto más", "VM_REAR_WING", +1)]),
     ("exit", +1, "Subviraje a la salida (al acelerar se abre)",
-     [("Diferencial en tracción", "menos bloqueo"), ("Barra estabilizadora tras.", "un punto más dura")]),
+     [("Diferencial en tracción", "menos bloqueo", "VM_DIFF_POWER", -1), ARB_R_STIFF]),
     ("exit", -1, "Sobreviraje a la salida (la trasera se va al acelerar)",
-     [("Control de tracción", "+1"), ("Barra estabilizadora tras.", "un punto más blanda"),
-      ("Diferencial en tracción", "más bloqueo si se va de golpe")]),
+     [TC_UP, ARB_R_SOFT, ("Diferencial en tracción", "más bloqueo si se va de golpe", "VM_DIFF_POWER", +1)]),
 ]
+# si el diferencial en tracción / retención no se ajusta en este coche, la precarga hace un efecto parecido
+DIFF_FALLBACK = {"VM_DIFF_POWER": "VM_DIFF_PRELOAD", "VM_DIFF_COAST": "VM_DIFF_PRELOAD"}
+NOT_ADJUSTABLE = ("non-adjustable", "fixed", "n/a", "n/d", "")
+WHEEL_KEYS = {"DI": "FL", "DD": "FR", "TI": "RL", "TD": "RR"}
 
 
 def _suggest(rep: Report, sd, laps, setup, own_infos) -> list:
@@ -271,17 +283,17 @@ def _suggest(rep: Report, sd, laps, setup, own_infos) -> list:
         sug.append(Suggestion(1, "Equilibrio", "Contravolantes repetidos",
                               f"Corriges con contravolante en {_fz(spins)} en al menos un tercio de las vueltas: "
                               "la trasera pierde agarre ahí.",
-                              [("Control de tracción", "+1 si ocurre al acelerar"),
-                               ("Reparto de frenada", "más adelante si ocurre al frenar")]))
+                              [("Control de tracción", "+1 si ocurre al acelerar", "VM_TRACTIONCONTROLMAP", +1),
+                               ("Reparto de frenada", "más adelante si ocurre al frenar", "VM_BRAKE_BALANCE", -1)]))
 
     s = rep.slip
     if s and s.braking_samples > 200:
         diff = s.front_slip - s.rear_slip          # más negativo: las delanteras deslizan más
         axle, change = None, None
         if diff < -0.006:
-            axle, change = "delantero", ("Reparto de frenada", "0,5 % más atrás")
+            axle, change = "delantero", ("Reparto de frenada", "0,5 % más atrás", "VM_BRAKE_BALANCE", +1)
         elif diff > 0.006:
-            axle, change = "trasero", ("Reparto de frenada", "0,5 % más adelante")
+            axle, change = "trasero", ("Reparto de frenada", "0,5 % más adelante", "VM_BRAKE_BALANCE", -1)
         if s.abs_active is not None and s.abs_active > 0.45:
             txt = f"El ABS actúa el {s.abs_active * 100:.0f} % del tiempo que frenas fuerte" + \
                   (f"; desliza más el eje {axle}." if axle else "; los dos ejes deslizan parecido.")
@@ -296,25 +308,85 @@ def _suggest(rep: Report, sd, laps, setup, own_infos) -> list:
             if s.front_lock > 0.08 and s.front_lock > 2 * s.rear_lock:
                 sug.append(Suggestion(1, "Frenos", "Bloqueas las delanteras",
                                       f"Una delantera bloquea el {s.front_lock * 100:.0f} % de la frenada fuerte.",
-                                      [("Reparto de frenada", "0,5–1 % más atrás")]))
+                                      [BB_BACK]))
             elif s.rear_lock > 0.06 and s.rear_lock > 1.5 * s.front_lock:
                 sug.append(Suggestion(1, "Frenos", "Bloqueas las traseras",
                                       f"Una trasera bloquea el {s.rear_lock * 100:.0f} % de la frenada fuerte.",
-                                      [("Reparto de frenada", "0,5–1 % más adelante"), ("Freno motor", "-1")]))
+                                      [BB_FWD, ("Freno motor", "-1", "VM_ENGINE_BRAKEMAP", 0)]))
     if s and s.tc_active is not None and s.tc_active > 0.15:
         sug.append(Suggestion(2, "Tracción", "El TC actúa mucho",
                               f"El control de tracción corta el {s.tc_active * 100:.0f} % del tiempo que aceleras: "
                               "pierdes empuje a la salida.",
-                              [("Diferencial en tracción", "más bloqueo"), ("Barra estabilizadora tras.", "un punto más blanda"),
+                              [("Diferencial en tracción", "más bloqueo", "VM_DIFF_POWER", +1), ARB_R_SOFT,
                                ("Tu técnica", "abre gas más progresivo a la salida")]))
     elif s and s.traction_samples > 200 and s.rear_spin > 0.12:
         sug.append(Suggestion(2, "Tracción", "Patinas al acelerar",
                               f"Las traseras giran más rápido que el coche el {s.rear_spin * 100:.0f} % del tiempo "
-                              "que aceleras a fondo.", [("Control de tracción", "+1")]))
+                              "que aceleras a fondo.", [TC_UP]))
 
     sug += _tyres_and_brakes(sd, laps)
+    steps = sd.setup_steps() if hasattr(sd, "setup_steps") else {}
+    sug = apply_limits(sug, setup, steps)
     sug += _history(setup, own_infos)
     return sug
+
+
+def apply_limits(sug: list, setup: dict, steps: dict) -> list:
+    """Quita lo que no se puede hacer con el reglaje de este coche: ajustes que no existen o no se pueden
+    cambiar, y los que ya están al mínimo o al máximo en el sentido que se pide. Si dos sugerencias piden mover
+    el mismo ajuste en sentidos opuestos, se queda la más importante. Cada cambio sale con su valor actual."""
+    out, taken = [], {}            # clave -> (sentido, título de la sugerencia que la usa)
+    for s in sorted(sug, key=lambda x: x.priority):
+        changes, notes, fixed = [], [], []
+        for ch in s.changes:
+            name, how = ch[0], ch[1]
+            key, d = (ch[2], ch[3]) if len(ch) >= 4 else (None, 0)
+            if key is None or not steps:       # sin datos de posiciones (sesión antigua): tal cual
+                changes.append((name, how))
+                continue
+            text = (setup.get(key) or ("", ""))[1]
+            st = steps.get(key)
+            adjustable = st is not None and st[2] > st[1] and text.lower() not in NOT_ADJUSTABLE
+            if not adjustable and key in DIFF_FALLBACK:
+                alt = DIFF_FALLBACK[key]
+                alt_st, alt_text = steps.get(alt), (setup.get(alt) or ("", ""))[1]
+                if alt_st and alt_st[2] > alt_st[1] and alt_text.lower() not in NOT_ADJUSTABLE:
+                    name, how, key, st, text, adjustable = ("Precarga del diferencial",
+                                                            how.replace("bloqueo", "precarga"), alt, alt_st,
+                                                            alt_text, True)
+            if not adjustable:
+                if st is not None or key in setup:
+                    fixed.append(name)
+                continue           # si no está en el reglaje, no existe en este coche: ni se menciona
+            if d and st is not None:
+                if d > 0 and st[0] >= st[2]:
+                    notes.append(f"{name} ya está al máximo ({text})")
+                    continue
+                if d < 0 and st[0] <= st[1]:
+                    notes.append(f"{name} ya está al mínimo ({text})")
+                    continue
+            prev = taken.get(key)
+            if d and prev and prev[0] != d:
+                notes.append(f"{name}: no se toca aquí, «{prev[1]}» pide lo contrario y pesa más")
+                continue
+            if d:
+                taken.setdefault(key, (d, s.title))
+            changes.append((name, f"{how}  (ahora {text})" if text else how))
+        real = [c for c in changes if c[0] != "Tu técnica"]
+        wanted = [c for c in s.changes if c[0] != "Tu técnica"]
+        if fixed and not real:      # solo se cuenta si no queda nada que cambiar
+            notes.append(f"{', '.join(dict.fromkeys(fixed))}: no se puede ajustar en este coche")
+        if notes:
+            s.evidence += "  " + ". ".join(notes) + "."
+        if wanted and not real:
+            if not changes and not notes:
+                continue
+            # sin nada que cambiar en el reglaje: se queda como aviso de baja prioridad
+            s.priority = 3
+            s.title += " (sin margen en el reglaje)"
+        s.changes = changes
+        out.append(s)
+    return out
 
 
 def _tyres_and_brakes(sd, laps) -> list:
@@ -341,28 +413,31 @@ def _tyres_and_brakes(sd, laps) -> list:
                                   "El centro de la banda va " + ", ".join(f"{w} {abs(d):.0f} °C" for w, d in ws) +
                                   f" {'más caliente' if sign > 0 else 'más frío'} que los bordes.",
                                   [(f"Presión en frío ({w})", f"{-round(d * 1.5):+d} kPa "
-                                    f"({-round(d * 1.5) / lapstats.KPA_PER_PSI:+.1f} psi)") for w, d in ws]))
+                                    f"({-round(d * 1.5) / lapstats.KPA_PER_PSI:+.1f} psi)",
+                                    f"WM_PRESSURE-W_{WHEEL_KEYS[w]}", -sign) for w, d in ws]))
     if camber_less:
         sug.append(Suggestion(3, "Neumáticos", f"Sobra caída en {', '.join(w for w, _ in camber_less)}",
                               "El interior va " + ", ".join(f"{w} {d:.0f} °C" for w, d in camber_less) +
                               " más caliente que el exterior.",
-                              [(f"Caída (camber) ({w})", "algo menos negativa") for w, _ in camber_less]))
+                              [(f"Caída (camber) ({w})", "algo menos negativa", f"WM_CAMBER-W_{WHEEL_KEYS[w]}", +1)
+                               for w, _ in camber_less]))
     if camber_more:
         sug.append(Suggestion(3, "Neumáticos", f"Falta caída en {', '.join(w for w, _ in camber_more)}",
                               "El exterior va " + ", ".join(f"{w} {d:.0f} °C" for w, d in camber_more) +
                               " más caliente que el interior.",
-                              [(f"Caída (camber) ({w})", "algo más negativa") for w, _ in camber_more]))
+                              [(f"Caída (camber) ({w})", "algo más negativa", f"WM_CAMBER-W_{WHEEL_KEYS[w]}", -1)
+                               for w, _ in camber_more]))
     if stats[0].brake_max:
         fmax = max(max(st.brake_max[:2]) for st in stats if st.brake_max)
         rmax = max(max(st.brake_max[2:]) for st in stats if st.brake_max)
-        for axle, val, key in (("delanteros", fmax, "Tomas de freno delanteras"),
-                               ("traseros", rmax, "Tomas de freno traseras")):
+        for axle, val, key, skey in (("delanteros", fmax, "Tomas de freno delanteras", "VM_BRAKE_DUCTS"),
+                                     ("traseros", rmax, "Tomas de freno traseras", "VM_BRAKE_DUCTS_REAR")):
             if val > 850:
                 sug.append(Suggestion(2, "Frenos", f"Frenos {axle} muy calientes", f"Llegan a {val:.0f} °C.",
-                                      [(key, "más abiertas")]))
+                                      [(key, "más abiertas", skey, -1)]))
             elif val < 350:
                 sug.append(Suggestion(3, "Frenos", f"Frenos {axle} fríos", f"No pasan de {val:.0f} °C.",
-                                      [(key, "más cerradas")]))
+                                      [(key, "más cerradas", skey, +1)]))
     return sug
 
 

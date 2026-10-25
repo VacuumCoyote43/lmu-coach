@@ -384,15 +384,25 @@ class SessionData:
             raw = dict(con.execute("select key, value from metadata").fetchall()).get("CarSetup", "")
         finally:
             con.close()
-        out = {}
+        out, steps = {}, {}
         try:
             for k, v in json.loads(raw).items():
                 if isinstance(v, dict) and v.get("available", True):
                     out[k] = (v.get("caption") or k, str(v.get("stringValue", v.get("value", ""))).strip())
+                    if isinstance(v.get("value"), int) and isinstance(v.get("maxValue"), int):
+                        # maxValue es el nº de posiciones: van de minValue a maxValue - 1
+                        steps[k] = (v["value"], int(v.get("minValue") or 0), v["maxValue"] - 1)
         except (ValueError, TypeError):
             pass
         self._cache["setup"] = out
+        self._cache["setup_steps"] = steps
         return out
+
+    def setup_steps(self) -> dict:
+        """{clave: (posición actual, mínima, máxima)} de cada ajuste del reglaje."""
+        if "setup_steps" not in self._cache:
+            self.setup()
+        return self._cache["setup_steps"]
 
     def lap_data(self, num: int) -> dict:
         """Arrays numpy a 50 Hz: t, d, v (km/h), thr, brk (0..1), steer (-1..1), gear, rpm, x, y (m)."""

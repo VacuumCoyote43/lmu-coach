@@ -1,6 +1,12 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.16.1": [
+        "Asistente de reglaje más realista: ya no propone bajar lo que está al mínimo (como la presión) ni subir lo "
+        "que está al máximo, ni tocar ajustes que tu coche no permite cambiar.",
+        "Cada cambio sugerido muestra el valor que llevas ahora, y si dos sugerencias piden mover lo mismo en "
+        "sentidos opuestos, se queda la más importante.",
+    ],
     "1.16.0": [
         "Pantalla de inicio: tu última sesión, tu objetivo más cercano, la semana y un botón grande para el coach "
         "(vuelve a ella con 🏠).",

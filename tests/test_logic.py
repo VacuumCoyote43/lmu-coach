@@ -251,6 +251,53 @@ class CornerTipTest(unittest.TestCase):
         self.assertIsNone(spoken_tip(self.fb(t=0.4)))
 
 
+class SetupLimitsTest(unittest.TestCase):
+    """El asistente de reglaje no propone lo imposible: ajustes al tope, fijos o en sentidos opuestos."""
+    SETUP = {"WM_PRESSURE-W_FL": ("", "136 kPa"), "VM_FRONT_ANTISWAY": ("", "P4"), "VM_REAR_ANTISWAY": ("", "P1"),
+             "VM_DIFF_POWER": ("", "Non-adjustable"), "VM_DIFF_PRELOAD": ("", "80 Nm"),
+             "VM_ENGINE_BRAKEMAP": ("", "N/A"), "VM_BRAKE_BALANCE": ("", "52.2:47.8")}
+    STEPS = {"WM_PRESSURE-W_FL": (0, 0, 74), "VM_FRONT_ANTISWAY": (4, 0, 7), "VM_REAR_ANTISWAY": (1, 0, 7),
+             "VM_DIFF_POWER": (0, 0, 0), "VM_DIFF_PRELOAD": (80, 0, 200), "VM_ENGINE_BRAKEMAP": (0, 0, 0),
+             "VM_BRAKE_BALANCE": (19, 0, 56)}
+
+    def run_limits(self, sugs):
+        from lmu_coach.setup_assistant import apply_limits
+        return apply_limits(sugs, self.SETUP, self.STEPS)
+
+    def sug(self, prio, title, changes):
+        from lmu_coach.setup_assistant import Suggestion
+        return Suggestion(prio, "x", title, "dato.", list(changes))
+
+    def test_value_at_minimum_is_not_suggested(self):
+        out = self.run_limits([self.sug(2, "Presión alta en DI", [("Presión en frío (DI)", "-6 kPa",
+                                                                    "WM_PRESSURE-W_FL", -1)])])
+        self.assertEqual(out[0].changes, [])
+        self.assertEqual(out[0].priority, 3)
+        self.assertIn("ya está al mínimo (136 kPa)", out[0].evidence)
+
+    def test_fixed_settings_dropped_and_diff_falls_back_to_preload(self):
+        out = self.run_limits([self.sug(1, "Sobreviraje a la salida", [
+            ("Freno motor", "-1", "VM_ENGINE_BRAKEMAP", 0),
+            ("Diferencial en tracción", "más bloqueo", "VM_DIFF_POWER", +1)])])
+        self.assertEqual([c[0] for c in out[0].changes], ["Precarga del diferencial"])
+        self.assertIn("ahora 80 Nm", out[0].changes[0][1])
+
+    def test_opposite_requests_keep_the_most_important(self):
+        out = self.run_limits([
+            self.sug(2, "Sobreviraje a la salida", [("Barra estabilizadora tras.", "más blanda", "VM_REAR_ANTISWAY", -1)]),
+            self.sug(1, "Subviraje en el vértice", [("Barra estabilizadora tras.", "más dura", "VM_REAR_ANTISWAY", +1),
+                                                    ("Barra estabilizadora del.", "más blanda", "VM_FRONT_ANTISWAY", -1)])])
+        first = next(s for s in out if s.title.startswith("Subviraje"))
+        second = next(s for s in out if s.title.startswith("Sobreviraje"))
+        self.assertEqual(len(first.changes), 2)
+        self.assertEqual(second.changes, [])
+        self.assertIn("pide lo contrario", second.evidence)
+
+    def test_technique_only_advice_is_untouched(self):
+        out = self.run_limits([self.sug(2, "El ABS trabaja mucho", [("Tu técnica", "pisa menos")])])
+        self.assertEqual((out[0].priority, out[0].title), (2, "El ABS trabaja mucho"))
+
+
 class SpotterTest(unittest.TestCase):
     def drive_circle(self, mirror):
         """Giro a la derecha en un círculo, con un rival por fuera y otro por dentro; el mundo puede ir espejado."""
