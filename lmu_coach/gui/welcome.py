@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from .. import archive, diagnostics
 from .. import config as C
 from ..paths import load_settings, save_settings
-from ..speech import Speaker
+from ..speech import make_speaker
 from . import theme
 from .diagnostics_dialog import ICON, pick_lmu_dir
 
@@ -130,12 +130,13 @@ class _VoicePage(QWizardPage):
 
     def initializePage(self):
         if self.speaker is None:
-            self.speaker = Speaker(True, self.cfg.get("voice_name"), float(self.cfg.get("voice_rate", 1.2)))
+            self.speaker = make_speaker(True, self.cfg.get("voice_name"), float(self.cfg.get("voice_rate", 1.2)))
             self.speaker.start()
             self.poll.start()
 
     def _fill(self):
-        if not self.speaker.voices:
+        win = getattr(self.speaker, "win", self.speaker)      # con Edge, esperar también a las de Windows
+        if not win.voices:
             return
         self.poll.stop()
         self.combo.clear()

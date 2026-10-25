@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import config as C
-from ..speech import RATES, Speaker
+from ..speech import RATES, make_speaker
 
 
 def _note(text):
@@ -31,7 +31,7 @@ class SettingsDialog(QDialog):
         self.cfg = C.load_config()
         self.msg_boxes: dict[str, QCheckBox] = {}
         self._dirty, self._dirty_msgs = {}, {}
-        self.speaker = Speaker(True, self.cfg.get("voice_name"), float(self.cfg.get("voice_rate", 1.2)))
+        self.speaker = make_speaker(True, self.cfg.get("voice_name"), float(self.cfg.get("voice_rate", 1.2)))
         self.speaker.start()
         self._save_timer = QTimer(self, singleShot=True, interval=300, timeout=self._save)
 
@@ -212,7 +212,12 @@ class SettingsDialog(QDialog):
         self.rate_combo.setCurrentIndex(min(range(len(RATES)), key=lambda i: abs(RATES[i][1] - cur)))
         self.rate_combo.currentIndexChanged.connect(self._rate_chosen)
         f.addRow("Velocidad:", self.rate_combo)
-        f.addRow(_note("Más voces: Configuración de Windows › Hora e idioma › Voz › Agregar voces."))
+        self.prewarm_label = _note("")
+        f.addRow(self.prewarm_label)
+        f.addRow(_note("Las «neural» son voces de Microsoft Edge, casi humanas: necesitan internet para generar cada "
+                       "frase la primera vez (luego se guardan y suenan al instante, también sin conexión). Si no hay "
+                       "internet, esa frase la dice la voz de Windows. Las demás son las de Windows (más: "
+                       "Configuración › Hora e idioma › Voz)."))
 
         ov = QGroupBox("Overlay del coach")
         g = QFormLayout(ov)
@@ -309,9 +314,10 @@ class SettingsDialog(QDialog):
     # --- voz --------------------------------------------------------------------
 
     def _fill_voices(self):
-        if not self.speaker.voices:
+        self._show_prewarm()
+        win = getattr(self.speaker, "win", self.speaker)      # con Edge, esperar también a las de Windows
+        if not win.voices or self.voice_combo.isEnabled():
             return
-        self._voice_poll.stop()
         self.voice_combo.blockSignals(True)
         self.voice_combo.clear()
         self.voice_combo.addItems(self.speaker.voices)
@@ -320,6 +326,23 @@ class SettingsDialog(QDialog):
             self.voice_combo.setCurrentText(cur)
         self.voice_combo.setEnabled(True)
         self.voice_combo.blockSignals(False)
+
+    def _show_prewarm(self):
+        """Avance de las frases urgentes de la voz neural (se generan al elegirla)."""
+        sp = self.speaker
+        if not hasattr(sp, "on_prewarm"):
+            return
+        if sp.on_prewarm is None:
+            sp.on_prewarm = lambda d, t: setattr(self, "_prewarm", (d, t))
+        d, t = getattr(self, "_prewarm", (0, 0))
+        if not getattr(sp, "edge", False):
+            self.prewarm_label.setText("")
+        elif t and d < t:
+            self.prewarm_label.setText(f"Preparando las frases urgentes con esta voz: {d} de {t}…")
+        elif t:
+            err = f" ({sp.last_error})" if sp.last_error and d < t else ""
+            self.prewarm_label.setText(f"<span style='color:#2ecc71'>Frases urgentes listas ({t}): «frena», el "
+                                       f"spotter y las banderas suenan al instante.</span>{err}")
 
     def _voice_chosen(self, name):
         if not name or not self.voice_combo.isEnabled():

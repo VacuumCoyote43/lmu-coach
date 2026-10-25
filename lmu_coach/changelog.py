@@ -1,6 +1,13 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.19.0": [
+        "Voces neuronales de Microsoft Edge para el coach (Álvaro, Elvira, Ximena…): casi humanas. Elígelas en "
+        "⚙ Ajustes › General › Voz.",
+        "Las frases urgentes (frena, spotter, banderas) se preparan al elegir la voz y suenan al instante; el resto "
+        "se genera la primera vez (hace falta internet) y se guarda.",
+        "Sin internet, esa frase la dice la voz de Windows, que sigue disponible para elegirla.",
+    ],
     "1.18.1": [
         "Ajustes › Radio: barra de progreso al descargar el modelo de Whisper, con los MB que van y los que faltan.",
     ],

@@ -70,6 +70,13 @@ def _selftest_voice(out):
                 t = time.time()
                 wl._transcribe(audio)
                 lines.append(f"whisper oye: {wl.results.get(timeout=30)} · «{wl.last_text}» · {time.time() - t:.2f} s")
+        # voces neuronales de Edge
+        from lmu_coach import speech_edge as E
+        lines.append(f"edge disponible: {E.available()}")
+        t = time.time()
+        p = E.generate(f"Prueba de voz {time.time():.0f}", "es-ES-AlvaroNeural", 1.2)
+        lines.append(f"edge genera: {p.stat().st_size} bytes en {time.time() - t:.2f} s")
+        p.unlink()
     except Exception:
         lines.append(traceback.format_exc())
     Path(out).write_text("\n".join(lines), encoding="utf-8")

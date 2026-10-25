@@ -100,6 +100,18 @@ CREATE_NO_WINDOW = 0x08000000
 RATES = [("Normal", 1.0), ("Rápida", 1.2), ("Muy rápida", 1.45)]
 
 
+def make_speaker(enabled=True, voice: str | None = None, rate: float = 1.2):
+    """Voces neuronales de Edge (con las de Windows de reserva y para elegir) si están disponibles; si no,
+    solo las de Windows."""
+    try:
+        from .speech_edge import VoiceSpeaker, available
+        if available():
+            return VoiceSpeaker(enabled, voice, rate)
+    except Exception:
+        pass
+    return Speaker(enabled, voice, rate)
+
+
 class Speaker:
     def __init__(self, enabled=True, voice: str | None = None, rate: float = 1.2, wav_path: str | None = None):
         self.enabled = enabled

@@ -10,3 +10,5 @@ winrt-Windows.Foundation.Collections>=3.0
 winrt-Windows.Globalization>=3.0
 # Whisper sin conexión (radio con el ingeniero)
 faster-whisper>=1.0
+# voces neuronales de Edge para el coach
+edge-tts>=6.1

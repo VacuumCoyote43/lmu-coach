@@ -8,7 +8,7 @@ from .engineer import Engineer
 from .spotter import DamageWatch, Spotter
 from .coach import LiveCoach, spoken_tip
 from .laps import LapRecorder, LapStore, Reference, fmt_time, save_async
-from .speech import RATES, Speaker, VoiceQueue, gap_es, lap_time_es
+from .speech import RATES, VoiceQueue, gap_es, lap_time_es, make_speaker
 from .overlay import AMBER, MUTED, Overlay
 from .config import DEFAULT_CONFIG, config_mtime, load_config, msg_on, save_config  # noqa: F401
 from .paths import DEMO_LAPS_DIR, INDEX_PATH, LAPS_DIR
@@ -65,7 +65,7 @@ class App:
         self.reader = DemoReader(demo_speed) if demo else LMUReader()
         self.coach = LiveCoach()
         self.recorder = LapRecorder(self._on_lap)
-        self.speaker = Speaker(bool(self.cfg.get("voice", True)), self.cfg.get("voice_name"),
+        self.speaker = make_speaker(bool(self.cfg.get("voice", True)), self.cfg.get("voice_name"),
                                float(self.cfg.get("voice_rate", 1.2)))
         self.speaker.start()
         self.voice = VoiceQueue(self.speaker)
