@@ -1,6 +1,12 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.21.1": [
+        "Arreglado: LMU no cargaba los setups guardados desde la app (móvil o PC) porque los saltos de línea salían "
+        "mal. Ahora el archivo queda igual que los que guarda LMU.",
+        "Cada setup muestra su coche, y avisa si es el del coche de seguridad (LMU lo deja a veces como «cargado» y "
+        "no aparece para tu coche).",
+    ],
     "1.21.0": [
         "📱🛠 Edita el setup desde el móvil: en el panel, el botón 🛠 abre el reglaje que tienes cargado en LMU (o uno "
         "guardado), lo cambias con − y + dentro de los límites de tu coche y lo guardas en la carpeta del circuito "

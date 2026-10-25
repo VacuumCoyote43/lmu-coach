@@ -50,7 +50,12 @@ class SetupEditorDialog(QDialog):
         self.source = QComboBox()
         for p in svm.find_setups():
             label = "Lo que tienes cargado ahora en LMU" if p.name == "TempModFile.svm" else f"{p.parent.name} / {p.stem}"
-            self.source.addItem(label, str(p))
+            try:
+                f = svm.parse(p)
+                car = "coche de seguridad" if f.pace_car else f.vehicle_class
+            except OSError:
+                car = ""
+            self.source.addItem(f"{label} ({car})" if car else label, str(p))
         self.source.currentIndexChanged.connect(lambda _i: self._load(self.source.currentData()))
         src.addWidget(self.source, 1)
         other = QPushButton("Abrir otro .svm…")
@@ -145,6 +150,10 @@ class SetupEditorDialog(QDialog):
             self.info.setText(self.info.text() + "<br><span style='color:#ffb020'>Ojo: no es el coche de la sesión "
                                                  "abierta; las sugerencias del asistente no se aplican.</span>")
             self.apply_btn.setEnabled(False)
+        if self.svm.pace_car:
+            self.info.setText(self.info.text() + "<br><span style='color:#ff5a5a'>Es el setup del coche de seguridad: "
+                                                 "LMU no lo enseñará para tu coche. Entra en el garaje con tu coche "
+                                                 "o elige un setup suyo.</span>")
         elif self.sd is not None:
             self.apply_btn.setEnabled(True)
         self._fill()

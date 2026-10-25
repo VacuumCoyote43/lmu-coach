@@ -35,10 +35,17 @@ def _allowed(path: str):
 
 
 def list_setups() -> dict:
+    """Con el coche de cada uno: LMU solo enseña en el garaje los setups del coche que llevas."""
     out = []
     for p in svm.find_setups():
+        try:
+            f = svm.parse(p)
+        except OSError:
+            continue
         label = "Lo que tienes cargado en LMU" if p.name == "TempModFile.svm" else f"{p.parent.name} · {p.stem}"
-        out.append({"path": str(p), "label": label})
+        car = "coche de seguridad" if f.pace_car else f.vehicle_class
+        out.append({"path": str(p), "label": f"{label} ({car})" if car else label, "pace_car": f.pace_car})
+    out.sort(key=lambda s: s["pace_car"])          # los del coche de seguridad, al final
     return {"setups": out}
 
 
@@ -68,8 +75,10 @@ def load(path: str, track_hint: str | None = None) -> dict:
     guess = svm.guess_track_folder(track_hint, folders) if track_hint else None
     if guess is None and p.parent.parent == svm.settings_dir():
         guess = p.parent.name
+    warn = ("Es el setup del coche de seguridad, no el tuyo: LMU no lo enseñará para tu coche. Entra en el garaje "
+            "con tu coche (o elige un setup suyo) y vuelve a abrir esta página.") if f.pace_car else ""
     return {"vehicle": f.vehicle_class, "limits_from": car, "groups": cats, "folders": folders,
-            "folder": guess or (folders[0] if folders else None)}
+            "folder": guess or (folders[0] if folders else None), "warning": warn}
 
 
 def save(data: dict) -> dict:
@@ -80,8 +89,10 @@ def save(data: dict) -> dict:
     folder = str(data.get("folder") or "")
     if base is None or folder not in svm.track_folders():
         return {"error": "Elige el circuito donde guardarlo"}
-    name = "".join(c for c in str(data.get("name") or "").strip() if c not in '\\/:*?"<>|.').strip()[:60] or "Desde el móvil"
+    name = "".join(c for c in str(data.get("name") or "").strip() if c not in '\\/:*?"<>|.').strip()[:60] or "Desde el movil"
     f = svm.parse(p)
+    if f.pace_car:
+        return {"error": "Ese es el setup del coche de seguridad: LMU no lo cargará en tu coche"}
     sessions, stem_for = _context()
     limits, _ = svm.limits_from_sessions(f, sessions, stem_for)
     changed = []
@@ -139,6 +150,7 @@ font-size:22px}.ctl span{min-width:58px;text-align:center;font-variant-numeric:t
 <div class="muted">Cambia el reglaje y guárdalo en la carpeta del circuito. En LMU: garaje › Cargar setup.</div>
 <select id="src"></select>
 <div class="muted" id="info"></div>
+<div class="msg err" id="warn"></div>
 <div id="list"></div>
 <div class="bar">
  <div class="grid"><input id="name" placeholder="Nombre del setup"><select id="folder"></select></div>
@@ -157,7 +169,9 @@ async function init(){
 async function load(){
  changes={};$("msg").textContent="";$("info").textContent="Cargando…";
  data=await j("/api/setup?path="+$("src").value);
+ $("warn").textContent="";
  if(data.error){$("info").textContent=data.error;return}
+ $("warn").textContent=data.warning||"";
  $("info").textContent=(data.vehicle||"")+(data.limits_from?" · límites de tu sesión con "+data.limits_from:" · sin sesiones con este coche: límites desconocidos");
  $("folder").innerHTML=data.folders.map(f=>`<option ${f==data.folder?"selected":""}>${f}</option>`).join("");
  render();
@@ -181,7 +195,7 @@ async function save(overwrite){
  const r=await j("/api/setup/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
  if(r.exists&&confirm(r.error+". ¿Reemplazarlo?"))return save(true);
  $("msg").className="msg "+(r.ok?"ok":"err");
- $("msg").textContent=r.ok?`Guardado «${r.name}» en ${r.folder} (${r.changes.length} cambios). En LMU: garaje › Cargar setup.`:r.error;
+ $("msg").textContent=r.ok?`Guardado «${r.name}» en ${r.folder} (${r.changes.length} cambios). En LMU: garaje › Cargar setup (con ${data.vehicle}).`:r.error;
 }
 $("src").onchange=load;$("save").onclick=()=>save(false);init();
 </script></body></html>

@@ -123,6 +123,11 @@ class SvmFile:
     vehicle_class: str = ""
     veh_stem: str = ""
 
+    @property
+    def pace_car(self) -> bool:
+        """El coche de seguridad: LMU lo deja en TempModFile.svm a veces y sus setups no salen para tu coche."""
+        return "PACECAR" in "\n".join(self.lines[:6]).upper() or self.vehicle_class.upper().endswith("_PC")
+
     def entry(self, session_key: str) -> Entry | None:
         return next((e for e in self.entries if e.session_key == session_key), None)
 
@@ -133,9 +138,18 @@ class SvmFile:
 _LINE = re.compile(r"^(//)?(\w+)=(-?\d+)(?://(.*))?$")
 
 
+def _read(path: Path) -> str:
+    """LMU escribe los .svm en ANSI (cp1252); los guardados por versiones viejas de la app pueden ir en UTF-8."""
+    raw = Path(path).read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252", errors="replace")
+    return re.sub(r"\r+\n", "\n", text)    # «\r\r\n» de la 1.21.0 → una sola línea
+
+
 def parse(path: Path) -> SvmFile:
-    text = Path(path).read_text(encoding="utf-8-sig", errors="replace")
-    lines = text.splitlines()
+    lines = _read(path).splitlines()
     svm = SvmFile(Path(path), lines)
     section = ""
     for i, raw in enumerate(lines):
@@ -174,7 +188,8 @@ def save(svm: SvmFile, path: Path, note: str = "") -> Path:
     if path.suffix.lower() != ".svm":
         path = path.with_suffix(".svm")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render(svm, note), encoding="utf-8")
+    # En binario: write_text convertiría cada «\n» de «\r\n» en otro «\r\n» y LMU no lo leería.
+    path.write_bytes(render(svm, note).encode("cp1252", errors="replace"))
     return path
 
 

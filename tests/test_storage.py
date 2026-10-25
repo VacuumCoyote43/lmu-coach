@@ -247,6 +247,34 @@ Downforce=0.500000
         self.assertIn("RWSetting=19//7.6 deg", text)          # lo demás, tal cual
         self.assertEqual(svm.parse(out).entry("VM_REAR_ANTISWAY").index, 2)
 
+    def test_saved_file_is_plain_crlf_and_stable(self):
+        src = self.tmp / "a.svm"
+        src.write_bytes(self.SAMPLE.replace("\n", "\r\n").encode("cp1252"))
+        f = svm.parse(src)
+        f.entry("VM_REAR_ANTISWAY").new_index = 2
+        out = svm.save(f, self.tmp / "c", note="Desde el móvil")
+        raw = out.read_bytes()
+        self.assertNotIn(b"\r\r", raw)                       # LMU no lee «\r\r\n»
+        self.assertEqual(raw.count(b"\r\n"), raw.count(b"\n"))
+        self.assertIn('Notes="Desde el móvil"'.encode("cp1252"), raw)
+        again = svm.save(svm.parse(out), self.tmp / "d").read_bytes()
+        self.assertEqual(again.count(b"\n"), raw.count(b"\n"))   # sin líneas de más al volver a guardar
+
+    def test_repairs_broken_line_endings_and_detects_pace_car(self):
+        src = self.tmp / "roto.svm"
+        src.write_bytes(b'VehicleClassSetting="992S_PC"\r\r\n\r\r\nUpgradeSetting=(0,0,0,0)\r\r\n'
+                        b'//VEH=C:\\X\\VEHICLES\\PACECAR\\992S_PC\\TEAMS\\992S_PC.VEH\r\r\n[REARWING]\r\r\nRWSetting=3//5 deg\r\r\n')
+        f = svm.parse(src)
+        self.assertTrue(f.pace_car)
+        self.assertEqual(f.lines[1], "")
+        self.assertEqual(len(f.lines), 6)
+        self.assertFalse(svm.parse(self._sample()).pace_car)
+
+    def _sample(self):
+        p = self.tmp / "s.svm"
+        p.write_text(self.SAMPLE, encoding="utf-8")
+        return p
+
     def test_default_settings_are_commented_and_get_uncommented(self):
         src = self.tmp / "a.svm"
         src.write_text(self.SAMPLE, encoding="utf-8")
@@ -337,7 +365,7 @@ class DashboardTest(unittest.TestCase):
                       "folder": "Portimao"})
             self.assertTrue(r.get("ok"), r)
             out = settings / "Portimao" / "menos barra.svm"          # nombre limpio, siempre en su carpeta
-            self.assertIn("RearAntiSwaySetting=4//", out.read_text(encoding="utf-8"))
+            self.assertIn("RearAntiSwaySetting=4//", out.read_text(encoding="cp1252"))
             self.assertTrue(post({"path": str(src), "changes": {"VM_REAR_ANTISWAY": 5}, "name": "menos barra",
                                   "folder": "Portimao"}).get("exists"))
             self.assertIn("error", post({"path": str(tmp / "otro.svm"), "changes": {}, "folder": "Portimao"}))
