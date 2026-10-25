@@ -2,3 +2,9 @@ PySide6>=6.7
 pyqtgraph>=0.13
 numpy>=1.26
 duckdb>=1.1
+# reconocimiento de voz moderno de Windows (radio con el ingeniero)
+winrt-runtime>=3.0
+winrt-Windows.Media.SpeechRecognition>=3.0
+winrt-Windows.Foundation>=3.0
+winrt-Windows.Foundation.Collections>=3.0
+winrt-Windows.Globalization>=3.0

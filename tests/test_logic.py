@@ -360,7 +360,7 @@ class RadioTest(unittest.TestCase):
             radio.update(cfg, snap, now=6)
             radio.listener.results.put(("posición", 0.2))
             held[0] = False
-            self.assertEqual(radio.update(cfg, snap, now=6.3), ("unknown", "posición"))
+            self.assertEqual(radio.update(cfg, snap, now=6.3), ("unknown", "«posición» (seguridad 0.20)"))
         finally:
             R.button_down = old
 

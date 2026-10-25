@@ -87,6 +87,16 @@ class RadioTab(QWidget):
         self.beep.setChecked(bool(self.r.get("beep", True)))
         self.beep.toggled.connect(lambda v: self._set("beep", v))
         f.addRow(self.beep)
+        self.engine = QComboBox()
+        modern = R.ModernListener.available()
+        self.engine.addItem("Moderno de Windows (recomendado)" if modern else
+                            "Moderno de Windows (no disponible en este PC)", "moderno")
+        self.engine.addItem("Clásico de Windows", "clasico")
+        self.engine.model().item(0).setEnabled(modern)
+        cur = self.r.get("engine", "auto")
+        self.engine.setCurrentIndex(1 if cur == "clasico" or not modern else 0)
+        self.engine.currentIndexChanged.connect(self._engine_changed)
+        f.addRow("Reconocimiento:", self.engine)
         conf = QDoubleSpinBox()
         conf.setRange(0.2, 0.9)
         conf.setSingleStep(0.05)
@@ -258,9 +268,15 @@ class RadioTab(QWidget):
             self._set("button", dlg.result_button)
             self._show_button()
 
+    def _engine_changed(self, _i):
+        self._set("engine", self.engine.currentData())
+        if self.listener is not None:
+            self.listener.close()
+            self.listener = None
+
     def _test(self):
         if self.listener is None:
-            self.listener = R.Listener()
+            self.listener = R.make_listener(self.engine.currentData())
         phrases = R.all_phrases(self._collect())
         self.listener.start(phrases)
         while not self.listener.results.empty():
@@ -283,7 +299,12 @@ class RadioTab(QWidget):
             text, conf = res
             cmd = R.find_command(text, self._collect())
             ans = R.render(cmd["say"], {}, examples=True) if cmd else ""
-            self._test_done(f"Oído: <b>{text}</b> (seguridad {conf:.2f})" + (f" → «{ans}»" if ans else ""))
+            low = conf < float(self.r.get("min_conf", 0.45))
+            self._test_done(f"Oído: <b>{text}</b> (seguridad {conf:.2f}"
+                            + (", <span style='color:#ffb020'>por debajo de tu mínimo: en pista diría «no te he "
+                               "entendido»</span>" if low else "") + ")" + (f" → «{ans}»" if ans and not low else ""))
+        elif res:
+            self.test_out.setText("Te he oído, pero no se parece a ninguna de tus frases. Prueba otra vez…")
         elif self._test_left <= 0:
             self._test_done("No he oído ninguna de tus frases. Comprueba el micrófono de Windows.")
 

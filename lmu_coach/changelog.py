@@ -3,6 +3,9 @@
 CHANGES = {
     "1.17.1": [
         "Ajustes › Radio: barra con el nivel del micrófono en directo, para ver si la app te oye.",
+        "La radio usa ahora el reconocimiento de voz moderno de Windows (mucho más preciso, sin internet); el "
+        "clásico queda como alternativa.",
+        "Si no te entiende, el coach te dice qué ha oído y con qué seguridad, para ajustar la «Seguridad mínima».",
     ],
     "1.17.0": [
         "📻 Radio con el ingeniero: mantén pulsado un botón del volante (o una tecla), pregunta y te contesta. "

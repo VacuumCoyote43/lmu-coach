@@ -506,14 +506,122 @@ class Listener:
             self._proc = None
 
 
+class ModernListener:
+    """El reconocedor moderno de Windows (WinRT, red neuronal, sin conexión): bastante mejor que System.Speech.
+    Misma interfaz que Listener. Con el botón pulsado escucha en sesión continua; al soltar, termina la frase."""
+
+    CONF = {0: 0.9, 1: 0.7, 2: 0.45, 3: 0.0}      # Alta, Media, Baja, Rechazada
+
+    def __init__(self):
+        self.results: queue.Queue = queue.Queue()
+        self.error: str | None = None
+        self.ready = False
+        self._loop = None
+        self._rec = None
+        self._phrases = None
+        self._running = False
+        self._thread = None
+
+    @staticmethod
+    def available() -> bool:
+        try:
+            from winrt.windows.media.speechrecognition import SpeechRecognizer
+            return any(l.language_tag.lower().startswith("es") for l in SpeechRecognizer.supported_grammar_languages)
+        except Exception:
+            return False
+
+    def _ensure_loop(self):
+        if self._loop is None:
+            import asyncio
+            self._loop = asyncio.new_event_loop()
+            self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+            self._thread.start()
+
+    def _run(self, coro):
+        import asyncio
+        return asyncio.run_coroutine_threadsafe(coro, self._loop)
+
+    def start(self, phrases: list[str]):
+        self._ensure_loop()
+        if phrases and phrases != self._phrases:
+            self._phrases = list(phrases)
+            self._run(self._build(list(phrases)))
+
+    set_phrases = start
+
+    async def _build(self, phrases):
+        from winrt.windows.globalization import Language
+        from winrt.windows.media.speechrecognition import (SpeechRecognitionListConstraint, SpeechRecognizer,
+                                                            SpeechRecognitionResultStatus)
+        try:
+            if self._rec is not None and self._running:
+                await self._rec.continuous_recognition_session.cancel_async()
+                self._running = False
+            lang = next((l for l in SpeechRecognizer.supported_grammar_languages
+                         if l.language_tag.lower().startswith("es")), Language("es-ES"))
+            rec = SpeechRecognizer(lang)
+            rec.constraints.append(SpeechRecognitionListConstraint(phrases))
+            r = await rec.compile_constraints_async()
+            if r.status != SpeechRecognitionResultStatus.SUCCESS:
+                self.error = f"No se pudieron preparar las frases (código {int(r.status)})"
+                return
+            rec.continuous_recognition_session.add_result_generated(self._on_result)
+            self._rec, self.ready, self.error = rec, True, None
+        except Exception as e:
+            self.error = f"Reconocimiento de voz de Windows: {e}"
+
+    def _on_result(self, _session, args):
+        res = args.result
+        raw = float(getattr(res, "raw_confidence", 0.0) or 0.0)
+        conf = max(raw, self.CONF.get(int(res.confidence), 0.0)) if int(res.confidence) != 3 else raw
+        self.results.put((res.text or None, conf))
+
+    def listen(self, on: bool):
+        if self._loop is None:
+            return
+        self._run(self._listen(on))
+
+    async def _listen(self, on):
+        if self._rec is None:
+            return
+        try:
+            sess = self._rec.continuous_recognition_session
+            if on and not self._running:
+                await sess.start_async()
+                self._running = True
+            elif not on and self._running:
+                self._running = False
+                await sess.stop_async()             # termina la frase en curso y da su resultado
+        except Exception as e:
+            self._running = False
+            self.error = f"Micrófono: {e}"
+
+    def close(self):
+        if self._loop is not None:
+            try:
+                self._run(self._listen(False)).result(2)
+            except Exception:
+                pass
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._loop = None
+
+
+def make_listener(engine: str = "auto"):
+    """«moderno» (WinRT), «clasico» (System.Speech) o «auto»: el moderno si está disponible."""
+    if engine in ("auto", "moderno") and ModernListener.available():
+        return ModernListener()
+    return Listener()
+
+
 class Radio:
     """Pulsar para hablar: con el botón pulsado escucha; al soltarlo (o al reconocer una frase) responde.
     update() se llama en cada vuelta del bucle del coach y devuelve la frase a decir (o None)."""
     MAX_LISTEN_S = 8.0
     GRACE_S = 1.2           # tras soltar el botón, aún espera el resultado este tiempo
 
-    def __init__(self, listener: Listener | None = None):
-        self.listener = listener or Listener()
+    def __init__(self, listener=None):
+        self.listener = listener
+        self._engine = None
         self.listening = False
         self._down = False
         self._since = 0.0
@@ -528,6 +636,11 @@ class Radio:
         if not r.get("on"):
             return None
         commands = r.get("commands") or DEFAULT_COMMANDS
+        engine = r.get("engine", "auto")
+        if self.listener is None or (self._engine is not None and engine != self._engine):
+            if self.listener is not None:
+                self.listener.close()
+            self.listener, self._engine = make_listener(engine), engine
         down = button_down(r.get("button"))
         out = None
         if down and not self._down:                    # se acaba de pulsar
@@ -550,13 +663,13 @@ class Radio:
                     self._stop()
                     return ("unknown", "")
                 return out
+            self.last_heard = (text, conf)
             if text is None or conf < float(r.get("min_conf", 0.45)):
                 if self._released_at is not None:      # ya soltó: no hay más que esperar
                     self._stop()
-                    return ("unknown", text or "")
+                    return ("unknown", f"«{text}» (seguridad {conf:.2f})" if text else "")
                 return out
             self._stop()
-            self.last_heard = text
             cmd = find_command(text, commands)
             if cmd is None:
                 return ("unknown", text)
@@ -579,5 +692,6 @@ class Radio:
                 break
 
     def close(self):
-        self.listener.close()
+        if self.listener is not None:
+            self.listener.close()
 

@@ -29,7 +29,36 @@ def _diag_session(path, out):
     Path(out).write_text("\n".join(lines), encoding="utf-8")
 
 
+def _selftest_voice(out):
+    """Comprueba que el reconocimiento de voz moderno funciona dentro del .exe (prepara las frases y escucha)."""
+    import time
+    import traceback
+    lines = []
+    try:
+        from lmu_coach import radio as R
+        lines.append(f"moderno disponible: {R.ModernListener.available()}")
+        lst = R.make_listener("auto")
+        lines.append(f"motor: {type(lst).__name__}")
+        lst.start(R.all_phrases(R.DEFAULT_COMMANDS))
+        t = time.time()
+        while not lst.ready and not lst.error and time.time() - t < 10:
+            time.sleep(0.05)
+        lines.append(f"listo: {lst.ready} · error: {lst.error}")
+        lst.listen(True)
+        time.sleep(1)
+        lst.listen(False)
+        time.sleep(1)
+        lines.append(f"error tras escuchar: {lst.error}")
+        lst.close()
+    except Exception:
+        lines.append(traceback.format_exc())
+    Path(out).write_text("\n".join(lines), encoding="utf-8")
+
+
 def main():
+    if "--selftest-voice" in sys.argv:
+        _selftest_voice(sys.argv[sys.argv.index("--selftest-voice") + 1])
+        return
     if "--diag-session" in sys.argv:
         i = sys.argv.index("--diag-session")
         _diag_session(sys.argv[i + 1], sys.argv[i + 2])
