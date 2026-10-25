@@ -1,6 +1,9 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.17.1": [
+        "Ajustes › Radio: barra con el nivel del micrófono en directo, para ver si la app te oye.",
+    ],
     "1.17.0": [
         "📻 Radio con el ingeniero: mantén pulsado un botón del volante (o una tecla), pregunta y te contesta. "
         "Tú eliges las frases y qué datos responde cada una (⚙ Ajustes › Radio), entre más de 35: combustible, "

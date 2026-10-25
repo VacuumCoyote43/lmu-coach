@@ -4,7 +4,7 @@ import copy
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
-    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .. import radio as R
@@ -97,6 +97,25 @@ class RadioTab(QWidget):
         f.addRow("Seguridad mínima:", conf)
         f.addRow(_note("Más alta: solo responde si está muy seguro de lo que has dicho. Más baja: responde más "
                        "aunque a veces se confunda de frase."))
+        mrow = QHBoxLayout()
+        self.meter = QProgressBar()
+        self.meter.setRange(0, 100)
+        self.meter.setTextVisible(False)
+        self.meter.setFixedHeight(12)
+        self.meter.setStyleSheet("QProgressBar { max-height: 12px; } QProgressBar::chunk { background: #2ecc71; }")
+        self.meter_label = QLabel("—")
+        self.meter_label.setFixedWidth(230)
+        mrow.addWidget(self.meter, 1)
+        mrow.addWidget(self.meter_label)
+        f.addRow("Micrófono:", mrow)
+        from .. import micmeter
+        mics = micmeter.devices()
+        mic_note = _note("Habla y mira la barra: si no se mueve, no te oye. Usa el micrófono predeterminado de Windows "
+                         "(Sonido › Entrada).")
+        mic_note.setToolTip("Micrófonos que ve Windows:\n" + "\n".join(m.strip() for m in mics) if mics else "")
+        f.addRow(mic_note)
+        self.mic = None
+        self.mic_timer = QTimer(self, interval=80, timeout=self._mic_poll)
         trow = QHBoxLayout()
         self.test_btn = QPushButton("🎙  Probar micrófono (5 s)")
         self.test_btn.clicked.connect(self._test)
@@ -274,6 +293,45 @@ class RadioTab(QWidget):
         self.test_btn.setEnabled(True)
         self.test_out.setText(html)
 
+    # --- nivel del micrófono (solo mientras se ve esta pestaña) -----------------------
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        from .. import micmeter
+        if self.mic is None:
+            self.mic = micmeter.MicMeter()
+            if not self.mic.open():
+                self.meter_label.setText(f"<span style='color:#ff5a5a'>{self.mic.error}</span>")
+                self.meter_label.setWordWrap(True)
+                self.mic = None
+                return
+        self.mic_timer.start()
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self._mic_stop()
+
+    def _mic_poll(self):
+        if self.mic is None:
+            return
+        lvl = self.mic.level()
+        if lvl is None:
+            return
+        peak = self.mic.peak
+        self.meter.setValue(int(peak * 100))
+        color = "#ff5a5a" if peak > 0.92 else "#2ecc71" if peak > 0.25 else "#ffb020"
+        self.meter.setStyleSheet("QProgressBar { max-height: 12px; } "
+                                 f"QProgressBar::chunk {{ background: {color}; }}")
+        self.meter_label.setText("muy alto (satura)" if peak > 0.92 else "te oigo bien" if peak > 0.35 else
+                                 "bajo: habla o sube el micro" if peak > 0.12 else "silencio")
+
+    def _mic_stop(self):
+        self.mic_timer.stop()
+        if self.mic:
+            self.mic.close()
+            self.mic = None
+
     def close_listener(self):
+        self._mic_stop()
         if self.listener:
             self.listener.close()

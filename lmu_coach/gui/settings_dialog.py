@@ -27,7 +27,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None, tab: str | None = None):
         super().__init__(parent)
         self.setWindowTitle("Ajustes")
-        self.resize(860, 780)
+        self.resize(880, 840)
         self.cfg = C.load_config()
         self.msg_boxes: dict[str, QCheckBox] = {}
         self._dirty, self._dirty_msgs = {}, {}
