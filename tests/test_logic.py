@@ -318,6 +318,15 @@ class RadioTest(unittest.TestCase):
         self.assertIsNone(R.find_command("pon música", R.DEFAULT_COMMANDS))
         self.assertIn("cuándo paro", R.all_phrases(R.DEFAULT_COMMANDS))
 
+    def test_whisper_text_matches_closest_phrase(self):
+        from lmu_coach import radio as R
+        from lmu_coach.whisper_asr import best_phrase
+        phrases = R.all_phrases(R.DEFAULT_COMMANDS)
+        self.assertEqual(best_phrase("Cuándo combustible me queda.", phrases)[0], "cuánto combustible me queda")
+        self.assertEqual(best_phrase("¿A cuánto va el de delante?", phrases)[0], "a cuánto va el de delante")
+        p, score = best_phrase("pon música de fondo", phrases)
+        self.assertLess(score, 0.6)
+
     def test_push_to_talk_flow(self):
         import queue
         from lmu_coach import radio as R

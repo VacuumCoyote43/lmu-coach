@@ -1,6 +1,12 @@
 """Novedades de cada versión: la app las enseña una vez después de actualizar."""
 
 CHANGES = {
+    "1.18.0": [
+        "La radio con el ingeniero usa Whisper: entiende mucho mejor, también con ruido, sin internet. Descarga el "
+        "modelo una vez en ⚙ Ajustes › Radio (el «base», ~145 MB, responde en medio segundo).",
+        "Ya no hace falta decir la frase exacta: se busca la más parecida a lo que dices.",
+        "El reconocimiento de Windows sigue disponible como alternativa.",
+    ],
     "1.17.1": [
         "Ajustes › Radio: barra con el nivel del micrófono en directo, para ver si la app te oye.",
         "La radio usa ahora el reconocimiento de voz moderno de Windows (mucho más preciso, sin internet); el "

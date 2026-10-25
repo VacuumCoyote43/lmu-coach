@@ -110,3 +110,57 @@ class MicMeter:
             w.waveInUnprepareHeader(self.h, C.byref(hdr), C.sizeof(hdr))
         w.waveInClose(self.h)
         self.hdrs, self.bufs = [], []
+
+
+class Recorder(MicMeter):
+    """Graba del micrófono mientras está activo (para Whisper): start() empieza, stop() devuelve el audio como
+    float32 a 16 kHz. Un hilo recoge los trozos para que no se pierda nada."""
+
+    MAX_S = 10.0
+
+    def __init__(self):
+        super().__init__(nbuf=8)
+        self._chunks = []
+        self._on = False
+        self._thread = None
+        import threading
+        self._lock = threading.Lock()
+
+    def start(self) -> bool:
+        import threading
+        with self._lock:
+            self._chunks = []
+        if not self.hdrs and not self.open():
+            return False
+        self._on = True
+        self._thread = threading.Thread(target=self._pump, daemon=True)
+        self._thread.start()
+        return True
+
+    def _pump(self):
+        import time
+        w = C.windll.winmm
+        while self._on:
+            for buf, hdr in zip(self.bufs, self.hdrs):
+                if hdr.dwFlags & WHDR_DONE:
+                    n = hdr.dwBytesRecorded
+                    with self._lock:
+                        if n and len(self._chunks) * CHUNK < self.MAX_S * RATE:
+                            self._chunks.append(buf.raw[:n])
+                    hdr.dwFlags &= ~WHDR_DONE
+                    w.waveInAddBuffer(self.h, C.byref(hdr), C.sizeof(hdr))
+            time.sleep(0.02)
+
+    def stop(self):
+        """Audio grabado (numpy float32) y cierra el micrófono."""
+        import time
+
+        import numpy as np
+        time.sleep(0.15)                 # el último trozo
+        self._on = False
+        if self._thread:
+            self._thread.join(1)
+        self.close()
+        with self._lock:
+            raw = b"".join(self._chunks)
+        return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0

@@ -67,7 +67,8 @@ class RadioTab(QWidget):
         top = QGroupBox("Radio con el ingeniero")
         f = QFormLayout(top)
         f.addRow(_note("Mantén pulsado el botón, di una de tus frases y suéltalo: el ingeniero te contesta con los "
-                       "datos que elijas. Funciona sin internet (reconocimiento de voz de Windows en español). "
+                       "datos que elijas. Todo funciona sin internet (Whisper, una vez descargado el modelo, o el reconocimiento "
+                       "de Windows). "
                        "En LMU, ese botón no debe tener otra función asignada."))
         self.on = QCheckBox("Radio activada")
         self.on.setChecked(bool(self.r.get("on")))
@@ -87,16 +88,37 @@ class RadioTab(QWidget):
         self.beep.setChecked(bool(self.r.get("beep", True)))
         self.beep.toggled.connect(lambda v: self._set("beep", v))
         f.addRow(self.beep)
+        from .. import whisper_asr as W
         self.engine = QComboBox()
         modern = R.ModernListener.available()
-        self.engine.addItem("Moderno de Windows (recomendado)" if modern else
-                            "Moderno de Windows (no disponible en este PC)", "moderno")
+        self.engine.addItem("Whisper (recomendado: el que mejor entiende)" if W.available() else
+                            "Whisper (no disponible)", "whisper")
+        self.engine.addItem("Moderno de Windows" if modern else "Moderno de Windows (no disponible en este PC)",
+                            "moderno")
         self.engine.addItem("Clásico de Windows", "clasico")
-        self.engine.model().item(0).setEnabled(modern)
+        self.engine.model().item(0).setEnabled(W.available())
+        self.engine.model().item(1).setEnabled(modern)
         cur = self.r.get("engine", "auto")
-        self.engine.setCurrentIndex(1 if cur == "clasico" or not modern else 0)
+        if cur == "auto":
+            cur = "whisper" if W.available() else "moderno" if modern else "clasico"
+        self.engine.setCurrentIndex(max(0, self.engine.findData(cur)))
         self.engine.currentIndexChanged.connect(self._engine_changed)
         f.addRow("Reconocimiento:", self.engine)
+        wrow = QHBoxLayout()
+        self.wmodel = QComboBox()
+        for size, desc in W.SIZES.items():
+            self.wmodel.addItem(f"{size} · {desc}", size)
+        self.wmodel.setCurrentIndex(max(0, self.wmodel.findData(self.r.get("whisper_model", "base"))))
+        self.wmodel.currentIndexChanged.connect(self._wmodel_changed)
+        self.wdl = QPushButton("⬇  Descargar modelo")
+        self.wdl.clicked.connect(self._download_model)
+        self.wstatus = QLabel()
+        wrow.addWidget(self.wmodel, 1)
+        wrow.addWidget(self.wdl)
+        self.wrow_label = QLabel("Modelo de Whisper:")
+        f.addRow(self.wrow_label, wrow)
+        f.addRow("", self.wstatus)
+        self._show_whisper()
         conf = QDoubleSpinBox()
         conf.setRange(0.2, 0.9)
         conf.setSingleStep(0.05)
@@ -151,7 +173,7 @@ class RadioTab(QWidget):
         self.table.setColumnWidth(0, 260)
         self.table.setColumnWidth(2, 40)
         self.table.verticalHeader().hide()
-        self.table.setMinimumHeight(200)
+        self.table.setMinimumHeight(260)
         v.addWidget(self.table, 1)
         row = QHBoxLayout()
         self.insert = QComboBox()
@@ -268,23 +290,77 @@ class RadioTab(QWidget):
             self._set("button", dlg.result_button)
             self._show_button()
 
+    def _show_whisper(self):
+        from .. import whisper_asr as W
+        on = self.engine.currentData() == "whisper"
+        for w in (self.wmodel, self.wdl, self.wstatus, self.wrow_label):
+            w.setVisible(on)
+        size = self.wmodel.currentData()
+        if W.is_downloaded(size):
+            self.wstatus.setText(f"<span style='color:#2ecc71'>Modelo «{size}» descargado.</span> Funciona sin internet.")
+            self.wdl.setEnabled(False)
+        else:
+            self.wstatus.setText(f"<span style='color:#ffb020'>Falta descargar el modelo «{size}»</span> (una sola vez; "
+                                 "mientras tanto se usa el reconocimiento de Windows).")
+            self.wdl.setEnabled(True)
+
+    def _wmodel_changed(self, _i):
+        self._set("whisper_model", self.wmodel.currentData())
+        self._reset_listener()
+        self._show_whisper()
+
+    def _download_model(self):
+        import threading
+        from .. import whisper_asr as W
+        size = self.wmodel.currentData()
+        self.wdl.setEnabled(False)
+        self.wstatus.setText(f"Descargando «{size}»… (puede tardar un poco)")
+        self._dl_result = None
+
+        def work():
+            self._dl_result = W.download(size) or "ok"
+        threading.Thread(target=work, daemon=True).start()
+        self._dl_timer = QTimer(self, interval=300, timeout=self._download_poll)
+        self._dl_timer.start()
+
+    def _download_poll(self):
+        if self._dl_result is None:
+            return
+        self._dl_timer.stop()
+        if self._dl_result != "ok":
+            self.wstatus.setText(f"<span style='color:#ff5a5a'>{self._dl_result}</span>")
+            self.wdl.setEnabled(True)
+        else:
+            self._reset_listener()
+            self._show_whisper()
+
+    def _reset_listener(self):
+        if self.listener is not None:
+            self.listener.close()
+            self.listener = None
+
     def _engine_changed(self, _i):
         self._set("engine", self.engine.currentData())
+        self._show_whisper()
         if self.listener is not None:
             self.listener.close()
             self.listener = None
 
     def _test(self):
         if self.listener is None:
-            self.listener = R.make_listener(self.engine.currentData())
+            self.listener = R.make_listener(self.engine.currentData(), self.wmodel.currentData())
         phrases = R.all_phrases(self._collect())
         self.listener.start(phrases)
         while not self.listener.results.empty():
             self.listener.results.get_nowait()
         self.test_btn.setEnabled(False)
         self.test_out.setText("Escuchando… di una de tus frases")
-        self._test_left = 50
+        self._test_left = 110 if self.engine.currentData() == "whisper" else 50
         QTimer.singleShot(1200, lambda: self.listener.listen(True))     # el proceso tarda en arrancar
+        if self.engine.currentData() == "whisper":
+            self.test_out.setText("Grabando 4 s… di una de tus frases")
+            QTimer.singleShot(5200, lambda: (self.listener.listen(False),
+                                             self.test_out.setText("Transcribiendo…")))
         self._test_timer = QTimer(self, interval=100, timeout=self._test_poll)
         self._test_timer.start()
 

@@ -1,14 +1,26 @@
 # PyInstaller: python -m PyInstaller lmu_coach.spec --noconfirm
 # Genera dist/LMU Coach/LMU Coach.exe (app + modo coach con --coach)
+from PyInstaller.utils.hooks import collect_all
+
+# Whisper (radio con el ingeniero): librerías nativas y datos que PyInstaller no ve solo
+datas, binaries, hidden = [("assets/icon.png", "assets"), ("assets/icon.ico", "assets")], [], []
+for pkg in ("faster_whisper", "ctranslate2", "tokenizers", "av"):
+    d, b, h = collect_all(pkg)
+    datas += d
+    binaries += b
+    hidden += h
 
 a = Analysis(
     ["lmu_coach_main.py"],
     pathex=[],
-    datas=[("assets/icon.png", "assets"), ("assets/icon.ico", "assets")],
+    datas=datas,
+    binaries=binaries,
     hiddenimports=["lmu_coach.app", "lmu_coach.gui.main", "lmu_coach.gui.launcher", "uuid", "decimal", "ipaddress",
                    "winrt.windows.media.speechrecognition", "winrt.windows.globalization", "winrt.windows.foundation",
-                   "winrt.windows.foundation.collections", "winrt.runtime", "asyncio"],  # duckdb los importa en tiempo de ejecución
-    excludes=["PyQt5", "PyQt6", "PySide2", "matplotlib", "scipy", "pandas", "IPython", "pytest"],
+                   "winrt.windows.foundation.collections", "winrt.runtime", "asyncio",
+                   "lmu_coach.whisper_asr", "huggingface_hub"] + hidden,  # duckdb los importa en tiempo de ejecución
+    excludes=["PyQt5", "PyQt6", "PySide2", "matplotlib", "scipy", "pandas", "IPython", "pytest", "torch",
+              "tensorflow", "onnxruntime"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

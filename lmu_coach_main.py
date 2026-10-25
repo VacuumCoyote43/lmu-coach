@@ -50,6 +50,26 @@ def _selftest_voice(out):
         time.sleep(1)
         lines.append(f"error tras escuchar: {lst.error}")
         lst.close()
+        # Whisper: cargar el modelo y transcribir un .wav (si se pasa)
+        from lmu_coach import whisper_asr as W
+        lines.append(f"whisper disponible: {W.available()} · modelo base: {W.is_downloaded('base')}")
+        if W.available() and W.is_downloaded("base"):
+            wl = W.WhisperListener("base")
+            wl.start(R.all_phrases(R.DEFAULT_COMMANDS))
+            t = time.time()
+            while not wl.ready and not wl.error and time.time() - t < 60:
+                time.sleep(0.1)
+            lines.append(f"whisper listo: {wl.ready} · error: {wl.error} · {time.time() - t:.1f} s")
+            wav = sys.argv[sys.argv.index("--selftest-voice") + 2] if len(sys.argv) > sys.argv.index(
+                "--selftest-voice") + 2 else None
+            if wav and wl.ready:
+                import wave
+                import numpy as np
+                with wave.open(wav) as w:
+                    audio = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
+                t = time.time()
+                wl._transcribe(audio)
+                lines.append(f"whisper oye: {wl.results.get(timeout=30)} · «{wl.last_text}» · {time.time() - t:.2f} s")
     except Exception:
         lines.append(traceback.format_exc())
     Path(out).write_text("\n".join(lines), encoding="utf-8")

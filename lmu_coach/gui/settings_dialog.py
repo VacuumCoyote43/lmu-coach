@@ -50,7 +50,12 @@ class SettingsDialog(QDialog):
         from .radio_tab import RadioTab
         self.radio_tab = RadioTab(self.cfg, self._play)
         self.radio_tab.changed.connect(lambda r: self._set("radio", r))
-        self.tabs.addTab(self.radio_tab, "📻 Radio")
+        radio_scroll = QScrollArea()
+        radio_scroll.setWidgetResizable(True)
+        radio_scroll.setFrameShape(QScrollArea.NoFrame)
+        radio_scroll.setWidget(self.radio_tab)
+        self.radio_page = radio_scroll
+        self.tabs.addTab(radio_scroll, "📻 Radio")
         lay.addWidget(self.tabs, 1)
         names = {"general": 0, "spotter": 1, "engineer": 2, "coach": 3, "car": 4, "radio": 5}
         if tab in names:
@@ -342,7 +347,7 @@ class SettingsDialog(QDialog):
 
     def _reset_tab(self):
         i = self.tabs.currentIndex()
-        if self.tabs.widget(i) is self.radio_tab:
+        if self.tabs.widget(i) is self.radio_page:
             self.radio_tab.reset()
             return
         for k in self.TAB_KEYS[i]:

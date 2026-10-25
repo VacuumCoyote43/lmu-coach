@@ -606,9 +606,14 @@ class ModernListener:
             self._loop = None
 
 
-def make_listener(engine: str = "auto"):
-    """«moderno» (WinRT), «clasico» (System.Speech) o «auto»: el moderno si está disponible."""
-    if engine in ("auto", "moderno") and ModernListener.available():
+def make_listener(engine: str = "auto", whisper_size: str = "base"):
+    """«whisper», «moderno» (WinRT), «clasico» (System.Speech) o «auto»: Whisper si está y tiene modelo,
+    si no el moderno de Windows."""
+    from . import whisper_asr
+    if engine in ("auto", "whisper") and whisper_asr.available() and (
+            engine == "whisper" or whisper_asr.is_downloaded(whisper_size)):
+        return whisper_asr.WhisperListener(whisper_size)
+    if engine in ("auto", "moderno", "whisper") and ModernListener.available():
         return ModernListener()
     return Listener()
 
@@ -636,11 +641,12 @@ class Radio:
         if not r.get("on"):
             return None
         commands = r.get("commands") or DEFAULT_COMMANDS
-        engine = r.get("engine", "auto")
+        engine = (r.get("engine", "auto"), r.get("whisper_model", "base"))
         if self.listener is None or (self._engine is not None and engine != self._engine):
             if self.listener is not None:
                 self.listener.close()
-            self.listener, self._engine = make_listener(engine), engine
+            self.listener, self._engine = make_listener(*engine), engine
+            self.listener.start(all_phrases(commands))      # Whisper tarda unos segundos en cargar
         down = button_down(r.get("button"))
         out = None
         if down and not self._down:                    # se acaba de pulsar
@@ -657,8 +663,9 @@ class Radio:
                 text, conf = self.listener.results.get_nowait()
             except queue.Empty:
                 text = conf = None
-                expired = (self._released_at is not None and now - self._released_at > self.GRACE_S) or \
-                    now - self._since > self.MAX_LISTEN_S
+                grace = getattr(self.listener, "GRACE_S", self.GRACE_S)
+                expired = (self._released_at is not None and now - self._released_at > grace) or \
+                    now - self._since > self.MAX_LISTEN_S + grace
                 if expired:
                     self._stop()
                     return ("unknown", "")

@@ -8,3 +8,5 @@ winrt-Windows.Media.SpeechRecognition>=3.0
 winrt-Windows.Foundation>=3.0
 winrt-Windows.Foundation.Collections>=3.0
 winrt-Windows.Globalization>=3.0
+# Whisper sin conexión (radio con el ingeniero)
+faster-whisper>=1.0
